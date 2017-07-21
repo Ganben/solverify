@@ -5,7 +5,7 @@
 
 from flask import Flask, redirect, url_for
 from flask import request
-import shlex
+import shlex, re, os
 import subprocess
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ def upload_sol():
         return '''
         <form method="post">
             <p><textarea cols=40 rows=10 name=code style="background-color:BFCEDC"></textarea>
-            <p><input type=submit value=Verify>
+            <p><input type=submit value=COMPILE>
         </form>
     '''
     solfile = request.form['code']
@@ -34,12 +34,53 @@ def upload_sol():
       solc_cmd % 'temp.sol'
     ), stdout=subprocess.PIPE)
     resout = res.communicate()
-    return resout
+    binary_regex = re.compile(b"\n======= (.*?) =======\nBinary of the runtime part: \n(.*?)\n")
+    contracts = re.findall(binary_regex, resout[0])
+    bit = []
+    for (cname, bin_str) in contracts:
+        bit.append(str(bin_str))
+    os.remove('temp.sol')
+    return ' '.join(bit)
+
+@app.route('/byte', methods=['GET', 'POST'])
+def upload_byte():
+    #upload bytecode and do analyzes, generate op code from bytecode
+    if not request.method == 'POST':
+        return '''
+        <form method="post">
+            <p><textarea cols=40 rows=10 name=code style="background-color:BFCEDC"></textarea>
+            <p><input type=submit value=EVM_OP>
+        </form>
+    '''
+    bytefile = request.form['code']
+    with open('temp.evm', 'w') as tempfile:
+        tempfile.write(bytefile)
+    try:
+        disasm_p = subprocess.Popen(
+            ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
+        disasm_out = disasm_p.communicate()[0]
+    except:
+        return "evm error"
+    result = []
+    result.append(str(disasm_out))
+    os.remove('temp.evm')
+    return '\n'.join(result)
+
+@app.route('/analyze', methods=['GET', 'POST'])
+def analyze():
+    #upload bytecode and do analyzes, generate op code from bytecode
+    if not request.method == 'POST':
+        return '''
+        <form method="post">
+            <p><textarea cols=40 rows=10 name=code style="background-color:BFCEDC"></textarea>
+            <p><input type=submit value=Analyze>
+        </form>
+    '''
 
 
 @app.route('/address/<c_addr>')
 def c_address(c_addr):
-    #download the contract code to perform a verification;
+    #download the contract code to perform a verification, and generate analyze report
     #fan write crawler
 
     #pass
