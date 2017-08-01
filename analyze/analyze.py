@@ -31,4 +31,17 @@ def find_callstack(opcode):
                 return True
     return False
 
-#find a
+#format change and some value replace
+def construction_sturct():
+    '''
+    prepare for further analyze
+    :param: read pre processed file, then change format
+    :return: generate the required files for analyze
+    '''
+    SOLFILE = 'temp.sol'
+    EVMFILE = 'temp.evm'
+    DISASMFILE = 'temp.disasm'
+    RPLACED = 'temp-replaced.disasm'
+    TOKENFILE = 'temp-tokenlist.disasm'
+
+
