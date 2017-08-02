@@ -2,15 +2,19 @@
 #ganben
 #store 4 analyze process
 
+
 import re
 import tokenize
+import zlib, base64
+from tokenize import NUMBER, NAME, NEWLINE
+import logging
 
-
+#default logger
+log = logging.getLogger(__name__)
 
 #find a callstack attack
 def find_callstack(opcode):
-    '''
-    use simple rules: trace send, call, callcode, delegatecall's opcode
+    '''use simple rules: trace send, call, callcode, delegatecall's opcode
     then find if there follows: SWAP4, POP, POP, POP, POP, ISZERO
     :param opcode: the compiled opcode, is a serialized bytestring
     :return: result of the analysis
@@ -33,8 +37,7 @@ def find_callstack(opcode):
 
 #format change and some value replace
 def construction_sturct():
-    '''
-    prepare for further analyze
+    '''prepare for further analyze
     :param: read pre processed file, then change format
     :return: generate the required files [] for analyze
     '''
@@ -82,15 +85,14 @@ def construction_sturct():
 
     return [SOLFILE, EVMFILE, DISASMFILE, RPLACED, TOKENFILE]
 
-#this process tokens
+#this process tokens: must called in construction func
 # 1. Parse the disassembled file
 # 2. Then identify each basic block (i.e. one-in, one-out)
 # 3. Store them in vertices
-def token2vertices():
-    '''
-    read token list, use a very long if elif block
+def cons_token2vertices(tokens):
+    '''input token list, use a very long if elif block
     to 3 lists
-    :return: [end_ins_dict], [instructions], [jump_type]
+    :return: {end_ins_dict}, {instructions}, {jump_type} = fun
     trying to implement better than origin
     '''
 
@@ -103,3 +105,87 @@ def token2vertices():
     wait_for_push = False
     is_new_block = False
     
+    #IO data struct, to return
+    end_ins_dict = {}
+    instructions = {}
+    jump_type = {}
+    for tok_type, tok_string, (srow, scol), _, line_number in tokens:
+        if wait_for_push is True:
+            push_val = ""
+            for ptok_type, ptok_string, _, _, _ in tokens:
+                if ptok_type == NEWLINE:
+                    is_new_line = True
+                    current_line_content += push_val + ' '
+                    instructions[current_ins_address] = current_line_content
+                    log.debug(current_line_content)
+                    current_line_content = ""
+                    wait_for_push = False
+                    break
+                try:
+                    int(ptok_string, 16)
+                    push_val += ptok_string
+                except ValueError:
+                    pass
+
+            continue
+        elif is_new_line is True and tok_type == NUMBER:  # looking for a line number
+            last_ins_address = current_ins_address
+            try:
+                current_ins_address = int(tok_string)
+            except ValueError:
+                log.critical("ERROR when parsing row %d col %d", srow, scol)
+                quit()
+            is_new_line = False
+            if is_new_block:
+                current_block = current_ins_address
+                is_new_block = False
+            continue
+        elif tok_type == NEWLINE:
+            is_new_line = True
+            log.debug(current_line_content)
+            instructions[current_ins_address] = current_line_content
+            current_line_content = ""
+            continue
+        elif tok_type == NAME:
+            if tok_string == "JUMPDEST":
+                if last_ins_address not in end_ins_dict:
+                    end_ins_dict[current_block] = last_ins_address
+                current_block = current_ins_address
+                is_new_block = False
+            elif tok_string == "STOP" or tok_string == "RETURN" or tok_string == "SUICIDE" or tok_string == "REVERT" or tok_string == "ASSERTFAIL":
+                jump_type[current_block] = "terminal"
+                end_ins_dict[current_block] = current_ins_address
+            elif tok_string == "JUMP":
+                jump_type[current_block] = "unconditional"
+                end_ins_dict[current_block] = current_ins_address
+                is_new_block = True
+            elif tok_string == "JUMPI":
+                jump_type[current_block] = "conditional"
+                end_ins_dict[current_block] = current_ins_address
+                is_new_block = True
+            elif tok_string.startswith('PUSH', 0):
+                wait_for_push = True
+            is_new_line = False
+        if tok_string != "=" and tok_string != ">":
+            current_line_content += tok_string + " "
+
+
+    if current_block not in end_ins_dict:
+        log.debug("current block: %d", current_block)
+        log.debug("last line: %d", current_ins_address)
+        end_ins_dict[current_block] = current_ins_address
+
+    if current_block not in jump_type:
+        jump_type[current_block] = "terminal"
+
+    for key in end_ins_dict:
+        if key not in jump_type:
+            jump_type[key] = "falls_to"
+
+    with open('vertercies', 'w') as of:
+        of.write(str(end_ins_dict))
+        of.write(str(instructions))
+        of.write(jump_type)
+
+    return end_ins_dict, instructions, jump_type
+
