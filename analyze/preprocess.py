@@ -1,7 +1,7 @@
 #encoding=utf-8
-#ganben
-#the file saved 4 implementation of example project
-#it refracted the IO and preprocess of sol, evm, and op code files
+# ganben
+# the file saved 4 implementation of example project
+# it refracted the IO and preprocess of sol, evm, and op code files
 
 import subprocess
 import os

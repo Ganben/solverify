@@ -1,6 +1,6 @@
 #encoding=utf-8
-#ganben
-#store 4 analyze process
+# ganben
+# store 4 analyze process
 
 
 import re
@@ -8,11 +8,13 @@ import tokenize
 import zlib, base64
 from tokenize import NUMBER, NAME, NEWLINE
 import logging
+from basicblock import BasicBlock
 
-#default logger
+
+# default logger
 log = logging.getLogger(__name__)
 
-#find a callstack attack
+# find a callstack attack
 def find_callstack(opcode):
     '''use simple rules: trace send, call, callcode, delegatecall's opcode
     then find if there follows: SWAP4, POP, POP, POP, POP, ISZERO
@@ -35,9 +37,9 @@ def find_callstack(opcode):
                 return True
     return False
 
-#format change and some value replace
+# format change and some value replace
 def construction_sturct():
-    '''prepare for further analyze
+    '''prepare for further analyze TODO: a better func desgin
     :param: read pre processed file, then change format
     :return: generate the required files [] for analyze
     '''
@@ -85,7 +87,7 @@ def construction_sturct():
 
     return [SOLFILE, EVMFILE, DISASMFILE, RPLACED, TOKENFILE]
 
-#this process tokens: must called in construction func
+# this process tokens: must called in construction func
 # 1. Parse the disassembled file
 # 2. Then identify each basic block (i.e. one-in, one-out)
 # 3. Store them in vertices
@@ -188,4 +190,46 @@ def cons_token2vertices(tokens):
         of.write(jump_type)
 
     return end_ins_dict, instructions, jump_type
+
+# construction on basic blocks
+def cons_basicblock(end_ins_dict, instructions, jump_type):
+    """read end_ins_dict and instance each key with basic blocks
+    related func or tool: sorted, BasicBlock(k,e)
+    :param: end_ins_dict, instructions, jump_type(f cons_token2vertices)
+    :return: edges, vertices dicts
+    """
+    vertices = {}
+    edges = {}
+    sorted_addresses = sorted(instructions.keys())
+    size = len(sorted_addresses)
+    for key in end_ins_dict:
+        end_address = end_ins_dict[key]
+        block = BasicBlock(key, end_address)
+        if key not in instructions:
+            continue
+        block.add_instruction(instructions[key])
+        i = sorted_addresses.index(key) + 1
+        while i < size and sorted_addresses[i] <= end_address:
+            block.add_instruction(instructions[sorted_addresses[i]])
+            i += 1
+        block.set_block_type(jump_type[key])
+        vertices[key] = block
+        edges[key] = []
+
+    return vertices, edges
+
+# construct static edges
+def cons_static_edges(jump_type, vertices, edges):
+    """read jump_type and conditionally append to edges 
+    :param: jump_type, vertices, edges
+    :return: vertices, edges
+    """
+    key_list = sorted(jump_type.keys())
+    length = len(key_list)
+    for i, key in enumerate(key_list):
+        if jump_type[key] != "terminal" and jump_type[key] != "unconditional" and i+1 < length:
+            target = key_list[i+1]
+            edges[key].append(target)
+            vertices[key].set_falls_to(target)
+    return vertices, edges
 
