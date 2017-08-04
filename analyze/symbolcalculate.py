@@ -5,6 +5,7 @@
 
 import json
 import os
+from z3 import *
 
 def init_global_state(state=None):
     """this block read the state.json setting and generate state description
@@ -69,3 +70,44 @@ def read_state(filepath):
         in_state['storage_dict'] = storage_dict
 
     return g_state, in_state
+
+#default values of path_conditions_and_vars{}
+def generate_defauls(g_state, in_state):
+    """the empty keys in inputs are generated with defaults values
+    the process returns path conditions and update g_state; using z3's BitVec func
+    :param: g_state {} in_state {}
+    :return: path_conditions_and_vars {}, g_state {}
+    """
+    path_conditions_and_vars = {"path_condition" : []}
+    #BitVec is a z3 component
+    #the path conditions and vars are very weird, more weird than their source code
+
+    g_state['sender_address'] = in_state.get('sender_address', BitVec("Is", 256))
+    path_conditions_and_vars["Is"] = g_state['sender_address']
+
+    g_state['receiver_address'] = in_state.get('receiver_address', BitVec("Ia", 256))
+    path_conditions_and_vars["Ia"] = g_state['receiver_address']
+
+    g_state['value'] = in_state.get('deposited_value', BitVec("Iv", 256))
+    path_conditions_and_vars["Iv"] = g_state['value']
+
+    g_state["miu_i"] = 0
+
+    g_state["gas_price"] =
+
+    g_state["origin"] = origin
+
+    g_state["currentCoinbase"] = currentCoinbase
+
+    g_state["currentTimestamp"] = currentTimestamp
+
+    g_state["currentNumber"] = currentNumber
+
+    g_state["currentDifficulty"] = currentDifficulty
+
+    g_state["currentGasLimit"] = currentGasLimit
+
+    g_state["callData"] = callData
+
+    return path_conditions_and_vars, g_state
+
