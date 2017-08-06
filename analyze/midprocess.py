@@ -1,6 +1,6 @@
 #encoding=utf-8
 # ganben
-# store 4 analyze process
+# based on source, bytecode and opcode, replace op code and tokenize instr
 
 
 import re
