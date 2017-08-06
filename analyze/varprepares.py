@@ -1,6 +1,6 @@
 #encoding=utf-8
 # ganben
-# in this script the state and transition of state is symbolic executed
+# in this script the state and transition of state is symbol variable prepared
 
 
 import json
@@ -166,5 +166,14 @@ def init_analysis():
     return analysis
 
 
-# symbolic execute main process
-def 
+# in symbolic execute main process functions
+def contains_only_concrete_values(stack):
+    """use z3 to judge a instr
+    :param: stack variable of instr simulation
+    :return: True/False result
+    """
+    for element in stack:
+        if isSymbolic(element):
+            return False
+    return True
+
