@@ -4,6 +4,7 @@
 
 
 import json
+import re
 import os
 from z3 import *
 import logging
@@ -177,3 +178,39 @@ def contains_only_concrete_values(stack):
             return False
     return True
 
+
+# check for evm sequence SWAP4, POP, POP, POP, POP, ISZERO
+def check_callstack_attack(disasm):
+    """check callstack attack in disasm opcode (pattern matched)
+    :param: replaced disasm bytecode
+    :returns: result True/False
+    """
+    problematic_instructions = ['CALL', 'CALLCODE']
+    for i in xrange(0, len(disasm)):
+        instruction = disasm[i]
+        if instruction[1] in problematic_instructions:
+            if not disasm[i+1][1] == 'SWAP':
+                return True
+            swap_num = int(disasm[i+1][2])
+            for j in range(swap_num):
+                if not disasm[i+j+2][1] == 'POP':
+                    return True
+            if not disasm[i + swap_num + 2][1] == 'ISZERO':
+                return True
+    return False
+
+# run a simulation of callstack attack
+def run_callstack_attack(disasm):
+    """ perform a regrex instruction pattern to perform callstack attack
+    :param: disasm opcode
+    :return: results dictionary
+    """
+    results = {}
+    # disasm_data = open(c_name).read()
+    instr_pattern = r"([\d]+): ([A-Z]+)([\d]?)(?: 0x)?(\S+)?"
+    instr = re.findall(instr_pattern, disasm)
+    result = check_callstack_attack(instr)
+
+    log.info("\t  CallStack Attack: \t %s", result)
+    results['callstack'] = result
+    return results
