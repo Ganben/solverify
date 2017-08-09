@@ -4,9 +4,12 @@
 
 
 import json
+import re
 import os
 from z3 import *
 import logging
+from opcode import *
+
 
 # there are a variable generator class in neighbor file
 from generator import Generator
@@ -25,7 +28,7 @@ def init_global_state(state=None):
         g_state, in_state = read_state('state.json')
 
     # TODO: complete the rest of rewritted func
-
+    return g_state, in_state
 
 
 def read_state(filepath):
@@ -78,7 +81,7 @@ def read_state(filepath):
 
     return g_state, in_state
 
-#default values of path_conditions_and_vars{}
+# default values of path_conditions_and_vars{}
 def generate_defauls(g_state, in_state):
     """the empty keys in inputs are generated with defaults values
     the process returns path conditions and update g_state; using z3's BitVec func
@@ -86,10 +89,10 @@ def generate_defauls(g_state, in_state):
     :return: path_conditions_and_vars {}, g_state {}
     """
     path_conditions_and_vars = {"path_condition" : []}
-    #BitVec is a z3 component
-    #the path conditions and vars are very weird, more weird than their source code
+    # BitVec is a z3 component
+    # the path conditions and vars are very weird, more weird than their source code
 
-    #a generator class is presumed to count and store a stack of the data
+    # a generator class is presumed to count and store a stack of the data
     gen = Generator()
 
     g_state['sender_address'] = in_state.get('sender_address', BitVec("Is", 256))
@@ -177,3 +180,203 @@ def contains_only_concrete_values(stack):
             return False
     return True
 
+
+# check for evm sequence SWAP4, POP, POP, POP, POP, ISZERO
+def check_callstack_attack(disasm):
+    """check callstack attack in disasm opcode (pattern matched)
+    :param: replaced disasm bytecode
+    :returns: result True/False
+    """
+    problematic_instructions = ['CALL', 'CALLCODE']
+    for i in xrange(0, len(disasm)):
+        instruction = disasm[i]
+        if instruction[1] in problematic_instructions:
+            if not disasm[i+1][1] == 'SWAP':
+                return True
+            swap_num = int(disasm[i+1][2])
+            for j in range(swap_num):
+                if not disasm[i+j+2][1] == 'POP':
+                    return True
+            if not disasm[i + swap_num + 2][1] == 'ISZERO':
+                return True
+    return False
+
+# run a simulation of callstack attack
+def run_callstack_attack(disasm):
+    """ perform a regrex instruction pattern to perform callstack attack
+    :param: disasm opcode
+    :return: results dictionary
+    """
+    results = {}
+    # disasm_data = open(c_name).read()
+    instr_pattern = r"([\d]+): ([A-Z]+)([\d]?)(?: 0x)?(\S+)?"
+    instr = re.findall(instr_pattern, disasm)
+    result = check_callstack_attack(instr)
+
+    log.info("\t  CallStack Attack: \t %s", result)
+    results['callstack'] = result
+    return results
+
+# calculate the gas( simulate ethereum)
+def calculate_gas(opcode, stack, mem, global_state, analysis, solver):
+    """this func has no global var definition so is cleanly trans
+    it uses opcode file defined values to calculate gas
+    :param: opcode, stack, mem, global_state, analysis dict and z3 solver obj
+    :returns: gas_increment, new_gas_memory
+    """
+    gas_increment = get_ins_cost(opcode) # base cost
+    gas_memory = analysis["gas_mem"]
+    # In some opcodes, gas cost is not only depend on opcode itself but also current state of evm
+    # For symbolic variables, we only add base cost part for simplicity
+    if opcode in ("LOG0", "LOG1", "LOG2", "LOG3", "LOG4") and len(stack) > 1:
+        if isinstance(stack[1], (int, long)):
+            gas_increment += GCOST["Glogdata"] * stack[1]
+    elif opcode == "EXP" and len(stack) > 1:
+        if isinstance(stack[1], (int, long)) and stack[1] > 0:
+            gas_increment += GCOST["Gexpbyte"] * (1 + math.floor(math.log(stack[1], 256)))
+    elif opcode == "EXTCODECOPY" and len(stack) > 2:
+        if isinstance(stack[2], (int, long)):
+            gas_increment += GCOST["Gcopy"] * math.ceil(stack[2] / 32)
+    elif opcode in ("CALLDATACOPY", "CODECOPY") and len(stack) > 3:
+        if isinstance(stack[3], (int, long)):
+            gas_increment += GCOST["Gcopy"] * math.ceil(stack[3] / 32)
+    elif opcode == "SSTORE" and len(stack) > 1:
+        if isinstance(stack[1], (int, long)):
+            try:
+                storage_value = global_state['Ia'][str(stack[0])]
+                # when we change storage value from zero to non-zero
+                if storage_value == 0 and stack[1] != 0:
+                    gas_increment += GCOST["Gsset"]
+                else:
+                    gas_increment += GCOST["Gsreset"]
+            except: # when storage address at considered key is empty
+                if stack[1] != 0:
+                    gas_increment += GCOST["Gsset"]
+                elif stack[1] == 0:
+                    gas_increment += GCOST["Gsreset"]
+        else:
+            try:
+                storage_value = global_state['Ia'][str(stack[0])]
+                solver.push()
+                solver.add(Not( And(storage_value == 0, stack[1] != 0) ))
+                if solver.check() == unsat:
+                    gas_increment += GCOST["Gsset"]
+                else:
+                    gas_increment += GCOST["Gsreset"]
+                solver.pop()
+            except:
+                solver.push()
+                solver.add(Not( stack[1] != 0 ))
+                if solver.check() == unsat:
+                    gas_increment += GCOST["Gsset"]
+                else:
+                    gas_increment += GCOST["Gsreset"]
+                solver.pop()
+    elif opcode == "SUICIDE" and len(stack) > 1:
+        if isinstance(stack[1], (int, long)):
+            address = stack[1] % 2**160
+            if address not in global_state:
+                gas_increment += GCOST["Gnewaccount"]
+        else:
+            address = str(stack[1])
+            if address not in global_state:
+                gas_increment += GCOST["Gnewaccount"]
+    elif opcode in ("CALL", "CALLCODE", "DELEGATECALL") and len(stack) > 2:
+        # Not fully correct yet
+        gas_increment += GCOST["Gcall"]
+        if isinstance(stack[2], (int, long)):
+            if stack[2] != 0:
+                gas_increment += GCOST["Gcallvalue"]
+        else:
+            solver.push()
+            solver.add(Not (stack[2] != 0))
+            if solver.check() == unsat:
+                gas_increment += GCOST["Gcallvalue"]
+            solver.pop()
+    elif opcode == "SHA3" and isinstance(stack[1], (int, long)):
+        pass # Not handle
+
+
+    #Calculate gas memory, add it to total gas used
+    length = len(mem.keys()) # number of memory words
+    new_gas_memory = GCOST["Gmemory"] * length + (length ** 2) // 512
+    gas_increment += new_gas_memory - gas_memory
+
+    return (gas_increment, new_gas_memory)
+
+# following are some useful funcs that from analysis.py
+
+# Check if it is possible to execute a path after a previous path
+# Previous path has prev_pc (previous path condition) and set global state variables as in gstate (only storage values)
+# Current path has curr_pc
+def is_feasible(prev_pc, gstate, curr_pc):
+    vars_mapping = {}
+    new_pc = list(curr_pc)
+    for expr in new_pc:
+        list_vars = get_vars(expr)
+        for var in list_vars:
+            vars_mapping[var.decl().name()] = var
+    new_pc += prev_pc
+    gen = Generator()
+    for storage_address in gstate:
+        var = gen.gen_owner_store_var(storage_address)
+        if var in vars_mapping:
+            new_pc.append(vars_mapping[var] == gstate[storage_address])
+    solver = Solver()
+    solver.set("timeout", global_params.TIMEOUT)
+    solver.push()
+    solver.add(new_pc)
+    if solver.check() == unsat:
+        solver.pop()
+        return False
+    else:
+        solver.pop()
+        return True
+
+
+# detect if two flows are not really having race condition, i.e. check if executing path j
+# after path i is possible.
+# 1. We first start with a simple check to see if a path edit some storage variable
+# which makes the other path infeasible
+# 2. We then check if two paths cannot be executed next to each other, for example they
+# are two paths yielded from this branch condition ``if (locked)"
+# 3. More checks are to come
+def is_false_positive(i, j, all_gs, path_conditions):
+    pathi = path_conditions[i]
+    pathj = path_conditions[j]
+    statei = all_gs[i]
+
+    # rename global variables in path i
+    set_of_pcs, statei = rename_vars(pathi, statei)
+    log.debug("Set of PCs after renaming global vars" + str(set_of_pcs))
+    log.debug("Global state values in path " + str(i) + " after renaming: " + str(statei))
+    if is_feasible(set_of_pcs, statei, pathj):
+        return 0
+    else:
+        return 1
+
+
+# Simple check if two flows of money are different
+def is_diff(flow1, flow2):
+    if len(flow1) != len(flow2):
+        return 1
+    n = len(flow1)
+    for i in range(n):
+        if flow1[i] == flow2[i]:
+            continue
+        try:
+            tx_cd = Or(Not(flow1[i][0] == flow2[i][0]),
+                       Not(flow1[i][1] == flow2[i][1]),
+                       Not(flow1[i][2] == flow2[i][2]))
+            solver = Solver()
+            solver.set("timeout", global_params.TIMEOUT)
+            solver.push()
+            solver.add(tx_cd)
+
+            if solver.check() == sat:
+                solver.pop()
+                return 1
+            solver.pop()
+        except Exception as e:
+            return 1
+    return 0

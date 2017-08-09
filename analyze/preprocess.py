@@ -27,13 +27,15 @@ def sol2evm(solcode):
     contracts = re.findall(binary_regex, resout[0])
     filelist = []
     evmlist = []
+    recon = []
     for (cname, bin_str) in contracts:
         filename = 'temp-%s.evm' % cname
         evmlist.append(bin_str)
         filelist.append(filename)
         with open(filename, 'w') as tfile:
             tfile.write(bin_str)
-    return filelist, evmlist
+            recon.append(bin_str)
+    return filelist, evmlist, recon
 
 #this is to read evm code and generate opcode and file
 def evm2opcode(evmcode):
@@ -48,8 +50,9 @@ def evm2opcode(evmcode):
         disasm_p = subprocess.Popen(
             ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
         disasm_out = disasm_p.communicate()[0]
-    except:
-        return "evm error"
+    except Exception as e:
+        print(e)
+        raise
     with open('temp.disasm', 'w') as tempfile:
         tempfile.write(disasm_out)
     return disasm_out
