@@ -81,7 +81,7 @@ def read_state(filepath):
 
     return g_state, in_state
 
-#default values of path_conditions_and_vars{}
+# default values of path_conditions_and_vars{}
 def generate_defauls(g_state, in_state):
     """the empty keys in inputs are generated with defaults values
     the process returns path conditions and update g_state; using z3's BitVec func
@@ -89,10 +89,10 @@ def generate_defauls(g_state, in_state):
     :return: path_conditions_and_vars {}, g_state {}
     """
     path_conditions_and_vars = {"path_condition" : []}
-    #BitVec is a z3 component
-    #the path conditions and vars are very weird, more weird than their source code
+    # BitVec is a z3 component
+    # the path conditions and vars are very weird, more weird than their source code
 
-    #a generator class is presumed to count and store a stack of the data
+    # a generator class is presumed to count and store a stack of the data
     gen = Generator()
 
     g_state['sender_address'] = in_state.get('sender_address', BitVec("Is", 256))
