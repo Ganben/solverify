@@ -1,6 +1,6 @@
 #encoding=utf-8
 # ganben
-# store 4 analyze process
+# based on source, bytecode and opcode, replace op code and tokenize instr
 
 
 import re
@@ -38,7 +38,7 @@ def find_callstack(opcode):
     return False
 
 # format change and some value replace
-def construction_sturct():
+def construction_file():
     '''prepare for further analyze TODO: a better func desgin
     :param: read pre processed file, then change format
     :return: generate the required files [] for analyze
@@ -86,6 +86,51 @@ def construction_sturct():
             of.write(' '.join(str(tokens)))
 
     return [SOLFILE, EVMFILE, DISASMFILE, RPLACED, TOKENFILE]
+
+# same process but only handle var in mem
+def construction_var(disasm_raw):
+    """not write file but do same construction
+    :param: disasm raw, lines [] by input
+    :returns: the replaced disasm [] and tokenlist []"""
+    disasm_list = disasm_raw.split('\n')
+    try:
+        for line in disasm_list:
+            line = line.replace('SELFDESTRUCT', 'SUICIDE')
+            line = line.replace('Missing opcode 0xfd', 'REVERT')
+            line = line.replace('Missing opcode 0xfe', 'ASSERTFAIL')
+            line = line.replace('Missing opcode', 'INVALID')
+            line = line.replace(':', '')
+            lineParts = line.split(' ')
+            try:  # removing initial zeroes
+                lineParts[0] = str(int(lineParts[0]))
+            except:
+                lineParts[0] = lineParts[0]
+
+            lineParts[-1] = lineParts[-1].strip('\n')
+            try:  # adding arrow if last is a number
+                lastInt = lineParts[-1]
+                if (int(lastInt, 16) or int(lastInt, 16) == 0) and len(lineParts) > 2:
+                    lineParts[-1] = "=>"
+                    lineParts.append(lastInt)
+            except Exception as e:
+                log.debug(' line fail %s ' % e)
+                pass
+            disasm_list[i] = ' '.join(lineParts)
+            i = i + 1
+    except Exception as e:
+        log.error(' block 121 error: %s ' % e)
+        raise
+
+    try:
+        tokenlist = tokenize.generate_tokens(disasm_list)
+    except Exception as e:
+        log.error(' block 127 error: %s ' % e)
+        raise
+
+    return disasm_list, tokenlist
+
+
+
 
 # this process tokens: must called in construction func
 # 1. Parse the disassembled file
@@ -196,7 +241,7 @@ def cons_basicblock(end_ins_dict, instructions, jump_type):
     """read end_ins_dict and instance each key with basic blocks
     related func or tool: sorted, BasicBlock(k,e)
     :param: end_ins_dict, instructions, jump_type(f cons_token2vertices)
-    :return: edges, vertices dicts
+    :return: vertices {}, edges {}
     """
     vertices = {}
     edges = {}
