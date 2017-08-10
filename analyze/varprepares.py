@@ -380,3 +380,103 @@ def is_diff(flow1, flow2):
         except Exception as e:
             return 1
     return 0
+
+# update_analysis
+def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_and_vars, solver):
+    """unchanged trans
+
+    :param analysis:
+    :param opcode:
+    :param stack:
+    :param mem:
+    :param global_state:
+    :param path_conditions_and_vars:
+    :param solver:
+    :return:
+    """
+    gas_increment, gas_memory = calculate_gas(opcode, stack, mem, global_state, analysis, solver)
+    analysis["gas"] += gas_increment
+    analysis["gas_mem"] = gas_memory
+
+    if opcode == "CALL":
+        recipient = stack[1]
+        transfer_amount = stack[2]
+        reentrancy_result = check_reentrancy_bug(path_conditions_and_vars, global_state)
+        analysis["reentrancy_bug"].append(reentrancy_result)
+        if isinstance(transfer_amount, (int, long)) and transfer_amount == 0:
+            return
+        if not isinstance(recipient, (int, long)):
+            recipient = simplify(recipient)
+        analysis["money_flow"].append(("Ia", str(recipient), transfer_amount))
+    elif opcode == "SUICIDE":
+        recipient = stack[0]
+        if not isinstance(recipient, (int, long)):
+            recipient = simplify(recipient)
+        analysis["money_flow"].append(("Ia", str(recipient), "all_remaining"))
+    # this is for data flow
+    elif global_params.DATA_FLOW:
+        if opcode == "SLOAD":
+            if len(stack) > 0:
+                address = stack[0]
+                if not isinstance(address, (int, long)):
+                    address = str(address)
+                if address not in analysis["sload"]:
+                    analysis["sload"].append(address)
+            else:
+                raise ValueError('STACK underflow')
+        elif opcode == "SSTORE":
+            if len(stack) > 1:
+                stored_address = stack[0]
+                stored_value = stack[1]
+                log.debug(type(stored_address))
+                # a temporary fix, not a good one.
+                # TODO move to z3 4.4.2 in which BitVecRef is hashable
+                if not isinstance(stored_address, (int, long)):
+                    stored_address = str(stored_address)
+                log.debug("storing value " + str(stored_value) + " to address " + str(stored_address))
+                if stored_address in analysis["sstore"]:
+                    # recording the new values of the item in storage
+                    analysis["sstore"][stored_address].append(stored_value)
+                else:
+                    analysis["sstore"][stored_address] = [stored_value]
+            else:
+                raise ValueError('STACK underflow')
+
+# for shit reason moved;
+def print_state(stack, mem, global_state):
+    log.debug("STACK: " + str(stack))
+    log.debug("MEM: " + str(mem))
+    log.debug("GLOBAL STATE: " + str(global_state))
+
+
+
+def isSymbolic(value):
+    return not isinstance(value, (int, long))
+
+def isReal(value):
+    return isinstance(value, (int, long))
+
+# def isTesting():
+#     return global_params.UNIT_TEST != 0
+
+def contains_only_concrete_values(stack):
+    for element in stack:
+        if isSymbolic(element):
+            return False
+    return True
+
+def to_symbolic(number):
+    if isReal(number):
+        return BitVecVal(number, 256)
+    return number
+
+def to_unsigned(number):
+    if number < 0:
+        return number + 2**256
+    return number
+
+def to_signed(number):
+    if number > 2**(256 - 1):
+        return (2**(256) - number) * (-1)
+    else:
+        return number
