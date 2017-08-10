@@ -447,3 +447,36 @@ def print_state(stack, mem, global_state):
     log.debug("STACK: " + str(stack))
     log.debug("MEM: " + str(mem))
     log.debug("GLOBAL STATE: " + str(global_state))
+
+
+
+def isSymbolic(value):
+    return not isinstance(value, (int, long))
+
+def isReal(value):
+    return isinstance(value, (int, long))
+
+# def isTesting():
+#     return global_params.UNIT_TEST != 0
+
+def contains_only_concrete_values(stack):
+    for element in stack:
+        if isSymbolic(element):
+            return False
+    return True
+
+def to_symbolic(number):
+    if isReal(number):
+        return BitVecVal(number, 256)
+    return number
+
+def to_unsigned(number):
+    if number < 0:
+        return number + 2**256
+    return number
+
+def to_signed(number):
+    if number > 2**(256 - 1):
+        return (2**(256) - number) * (-1)
+    else:
+        return number

@@ -4,11 +4,21 @@
 
 from z3 import *
 import logging
+import zlib
+import base64
+import traceback
 import varprepares as vp
 import midprocess as mp
 import preprocess as pp
 import global_params
 from utils import *
+from collections import namedtuple
+from ethereum_data import *
+from assertion import Assertion
+
+
+UNSIGNED_BOUND_NUMBER = 2**256 - 1
+CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
 
 class Verifier():
     """
@@ -19,6 +29,9 @@ class Verifier():
     returns for certain type check: result
     a centralized method to perform all checkers
     """
+    # UNSIGNED_BOUND_NUMBER = 2 ** 256 - 1
+    # CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
+
     def __init__(self):
         """prepare all vars"""
         # load source files
@@ -32,7 +45,7 @@ class Verifier():
 
         self.block = 0
         self.pre_block = 0
-        self.visited =[]
+        self.visited = []
         self.depth = 0
         self.stack = []
         self.mem = {}
@@ -143,7 +156,14 @@ class Verifier():
             # try every check items
             try:
                 self.check_callstack_attack()
-                self.sym_exec_block()
+                # find the initial exec of this analysis
+                self.sym_exec_block(self.block, self.pre_block, self.visited, self.depth, self.stack,
+                                    self.mem, self.memory, self.global_state, self.path_conditions_and_vars,
+                                    self.analysis, self.path, self.models)
+            except Exception as e:
+                self.log.error(' check all %s ' % e)
+                raise
+
 
         else:
             raise BaseException('Load source first')
@@ -243,13 +263,18 @@ class Verifier():
         # Go to next Basic Block(s)
         if self.jump_type[block] == "terminal" or depth > global_params.DEPTH_LIMIT:
             self.log.debug("TERMINATING A PATH ...")
-            display_analysis(analysis)
+            # display_analysis(analysis)
+            self.log.debug('Money flow: %s ' % analysis.get('money_flow'))
 
             self.total_no_of_paths += 1
             if global_params.UNIT_TEST == 1:
-                compare_stack_unit_test(stack)
+                pass
+                # useless exec
+                # compare_stack_unit_test(stack)
             if global_params.UNIT_TEST == 2 or global_params.UNIT_TEST == 3:
-                compare_storage_and_memory_unit_test(global_state, mem, analysis)
+                # later impl TODO
+                pass
+                # compare_storage_and_memory_unit_test(global_state, mem, analysis)
 
         elif self.jump_type[block] == "unconditional":  # executing "JUMP"
             successor = self.vertices[block].get_jump_target()
@@ -304,7 +329,7 @@ class Verifier():
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
             except Exception as e:
                 self.log.error('recursive error: %s ' % e)
-                log_file.write(str(e))
+                # log_file.write(str(e))
                 traceback.print_exc()
                 if not global_params.IGNORE_EXCEPTIONS:
                     if str(e) == "timeout":
@@ -338,7 +363,7 @@ class Verifier():
                     self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
             except Exception as e:
-                log_file.write(str(e))
+                # log_file.write(str(e))
                 traceback.print_exc()
                 if not global_params.IGNORE_EXCEPTIONS:
                     if str(e) == "timeout":
@@ -420,10 +445,10 @@ class Verifier():
                 first = stack.pop(0)
                 second = stack.pop(0)
                 # Type conversion is needed when they are mismatched
-                if isReal(first) and isSymbolic(second):
+                if vp.isReal(first) and vp.isSymbolic(second):
                     first = BitVecVal(first, 256)
                     computed = first + second
-                elif isSymbolic(first) and isReal(second):
+                elif vp.isSymbolic(first) and vp.isReal(second):
                     second = BitVecVal(second, 256)
                     computed = first + second
                 else:
@@ -438,9 +463,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if isReal(first) and isSymbolic(second):
+                if vp.isReal(first) and vp.isSymbolic(second):
                     first = BitVecVal(first, 256)
-                elif isSymbolic(first) and isReal(second):
+                elif vp.isSymbolic(first) and vp.isReal(second):
                     second = BitVecVal(second, 256)
                 computed = first * second & UNSIGNED_BOUND_NUMBER
                 stack.insert(0, computed)
@@ -451,10 +476,10 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if isReal(first) and isSymbolic(second):
+                if vp.isReal(first) and vp.isSymbolic(second):
                     first = BitVecVal(first, 256)
                     computed = first - second
-                elif isSymbolic(first) and isReal(second):
+                elif vp.isSymbolic(first) and vp.isReal(second):
                     second = BitVecVal(second, 256)
                     computed = first - second
                 else:
@@ -467,16 +492,16 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if second == 0:
                         computed = 0
                     else:
-                        first = to_unsigned(first)
-                        second = to_unsigned(second)
+                        first = vp.to_unsigned(first)
+                        second = vp.to_unsigned(second)
                         computed = first / second
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(second == 0))
                     if self.solver.check() == unsat:
@@ -492,9 +517,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
-                    first = to_signed(first)
-                    second = to_signed(second)
+                if vp.contains_only_concrete_values([first, second]):
+                    first = vp.to_signed(first)
+                    second = vp.to_signed(second)
                     if second == 0:
                         computed = 0
                     elif first == -2 ** 255 and second == -1:
@@ -503,8 +528,8 @@ class Verifier():
                         sign = -1 if (first / second) < 0 else 1
                         computed = sign * (abs(first) / abs(second))
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(second == 0))
                     if self.solver.check() == unsat:
@@ -533,17 +558,17 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if second == 0:
                         computed = 0
                     else:
-                        first = to_unsigned(first)
-                        second = to_unsigned(second)
+                        first = vp.to_unsigned(first)
+                        second = vp.to_unsigned(second)
                         computed = first % second & UNSIGNED_BOUND_NUMBER
 
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
 
                     self.solver.push()
                     self.solver.add(Not(second == 0))
@@ -562,17 +587,17 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if second == 0:
                         computed = 0
                     else:
-                        first = to_signed(first)
-                        second = to_signed(second)
+                        first = vp.to_signed(first)
+                        second = vp.to_signed(second)
                         sign = -1 if first < 0 else 1
                         computed = sign * (abs(first) % abs(second))
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
 
                     self.solver.push()
                     self.solver.add(Not(second == 0))
@@ -604,14 +629,14 @@ class Verifier():
                 second = stack.pop(0)
                 third = stack.pop(0)
 
-                if contains_only_concrete_values([first, second, third]):
+                if vp.contains_only_concrete_values([first, second, third]):
                     if third == 0:
                         computed = 0
                     else:
                         computed = (first + second) % third
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(third == 0))
                     if self.solver.check() == unsat:
@@ -633,14 +658,14 @@ class Verifier():
                 second = stack.pop(0)
                 third = stack.pop(0)
 
-                if contains_only_concrete_values([first, second, third]):
+                if vp.contains_only_concrete_values([first, second, third]):
                     if third == 0:
                         computed = 0
                     else:
                         computed = (first * second) % third
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(third == 0))
                     if self.solver.check() == unsat:
@@ -661,12 +686,12 @@ class Verifier():
                 base = stack.pop(0)
                 exponent = stack.pop(0)
                 # Type conversion is needed when they are mismatched
-                if contains_only_concrete_values([base, exponent]):
+                if vp.contains_only_concrete_values([base, exponent]):
                     computed = pow(base, exponent, 2 ** 256)
                 else:
                     # The computed value is unknown, this is because power is
                     # not supported in bit-vector theory
-                    new_var_name = gen.gen_arbitrary_var()
+                    new_var_name = self.gen.gen_arbitrary_var()
                     computed = BitVec(new_var_name, 256)
                 stack.insert(0, computed)
             else:
@@ -676,7 +701,7 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if first >= 32 or first < 0:
                         computed = second
                     else:
@@ -686,8 +711,8 @@ class Verifier():
                         else:
                             computed = second & ((1 << signbit_index_from_right) - 1)
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(Or(first >= 32, first < 0)))
                     if self.solver.check() == unsat:
@@ -713,9 +738,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
-                    first = to_unsigned(first)
-                    second = to_unsigned(second)
+                if vp.contains_only_concrete_values([first, second]):
+                    first = vp.to_unsigned(first)
+                    second = vp.to_unsigned(second)
                     if first < second:
                         stack.insert(0, 1)
                     else:
@@ -730,9 +755,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
-                    first = to_unsigned(first)
-                    second = to_unsigned(second)
+                if vp.contains_only_concrete_values([first, second]):
+                    first = vp.to_unsigned(first)
+                    second = vp.to_unsigned(second)
                     if first > second:
                         stack.insert(0, 1)
                     else:
@@ -747,9 +772,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
-                    first = to_signed(first)
-                    second = to_signed(second)
+                if vp.contains_only_concrete_values([first, second]):
+                    first = vp.to_signed(first)
+                    second = vp.to_signed(second)
                     if first < second:
                         stack.insert(0, 1)
                     else:
@@ -764,9 +789,9 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
-                    first = to_signed(first)
-                    second = to_signed(second)
+                if vp.contains_only_concrete_values([first, second]):
+                    first = vp.to_signed(first)
+                    second = vp.to_signed(second)
                     if first > second:
                         stack.insert(0, 1)
                     else:
@@ -781,7 +806,7 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
                 second = stack.pop(0)
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if first == second:
                         stack.insert(0, 1)
                     else:
@@ -798,7 +823,7 @@ class Verifier():
             if len(stack) > 0:
                 global_state["pc"] = global_state["pc"] + 1
                 first = stack.pop(0)
-                if isReal(first):
+                if vp.isReal(first):
                     if first == 0:
                         stack.insert(0, 1)
                     else:
@@ -854,15 +879,15 @@ class Verifier():
                 byte_index = 32 - first - 1
                 second = stack.pop(0)
 
-                if contains_only_concrete_values([first, second]):
+                if vp.contains_only_concrete_values([first, second]):
                     if first >= 32 or first < 0:
                         computed = 0
                     else:
                         computed = second & (255 << (8 * byte_index))
                         computed = computed >> (8 * byte_index)
                 else:
-                    first = to_symbolic(first)
-                    second = to_symbolic(second)
+                    first = vp.to_symbolic(first)
+                    second = vp.to_symbolic(second)
                     self.solver.push()
                     self.solver.add(Not(Or(first >= 32, first < 0)))
                     if self.solver.check() == unsat:
@@ -881,7 +906,7 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 s0 = stack.pop(0)
                 s1 = stack.pop(0)
-                if contains_only_concrete_values([s0, s1]):
+                if vp.contains_only_concrete_values([s0, s1]):
                     # simulate the hashing of sha3
                     data = [str(x) for x in memory[s0: s0 + s1]]
                     position = ''.join(data)
@@ -892,7 +917,7 @@ class Verifier():
                     stack.insert(0, position)
                 else:
                     # push into the execution a fresh symbolic variable
-                    new_var_name = gen.gen_arbitrary_var()
+                    new_var_name = self.gen.gen_arbitrary_var()
                     new_var = BitVec(new_var_name, 256)
                     path_conditions_and_vars[new_var_name] = new_var
                     stack.insert(0, new_var)
@@ -908,16 +933,16 @@ class Verifier():
             if len(stack) > 0:
                 global_state["pc"] = global_state["pc"] + 1
                 address = stack.pop(0)
-                if isReal(address) and global_params.USE_GLOBAL_BLOCKCHAIN:
-                    new_var = data_source.getBalance(address)
+                if vp.isReal(address) and global_params.USE_GLOBAL_BLOCKCHAIN:
+                    new_var = self.data_source.getBalance(address)
                 else:
-                    new_var_name = gen.gen_balance_var()
+                    new_var_name = self.gen.gen_balance_var()
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
                         new_var = BitVec(new_var_name, 256)
                         path_conditions_and_vars[new_var_name] = new_var
-                if isReal(address):
+                if vp.isReal(address):
                     hashed_address = "concrete_address_" + str(address)
                 else:
                     hashed_address = str(address)
@@ -948,7 +973,7 @@ class Verifier():
                         callData = callData + "0"
                     stack.insert(0, int(callData[start:end], 16))
                 else:
-                    new_var_name = gen.gen_data_var(position)
+                    new_var_name = self.gen.gen_data_var(position)
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
@@ -962,7 +987,7 @@ class Verifier():
             if global_params.INPUT_STATE and global_state["callData"]:
                 stack.insert(0, len(global_state["callData"]) / 2)
             else:
-                new_var_name = gen.gen_data_size()
+                new_var_name = self.gen.gen_data_size()
                 if new_var_name in path_conditions_and_vars:
                     new_var = path_conditions_and_vars[new_var_name]
                 else:
@@ -995,7 +1020,7 @@ class Verifier():
                 no_bytes = stack.pop(0)
                 current_miu_i = global_state["miu_i"]
 
-                if contains_only_concrete_values([mem_location, current_miu_i, code_from, no_bytes]):
+                if vp.contains_only_concrete_values([mem_location, current_miu_i, code_from, no_bytes]):
                     temp = long(math.ceil((mem_location + no_bytes) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
@@ -1011,7 +1036,7 @@ class Verifier():
                         code = evm[start: end]
                     mem[mem_location] = code
                 else:
-                    new_var_name = gen.gen_code_var("Ia", code_from, no_bytes)
+                    new_var_name = self.gen.gen_code_var("Ia", code_from, no_bytes)
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
@@ -1019,7 +1044,7 @@ class Verifier():
                         path_conditions_and_vars[new_var_name] = new_var
 
                     temp = ((mem_location + no_bytes) / 32) + 1
-                    current_miu_i = to_symbolic(current_miu_i)
+                    current_miu_i = vp.to_symbolic(current_miu_i)
                     expression = current_miu_i < temp
                     self.solver.push()
                     self.solver.add(expression)
@@ -1038,8 +1063,8 @@ class Verifier():
             if len(stack) > 0:
                 global_state["pc"] = global_state["pc"] + 1
                 address = stack.pop(0)
-                if isReal(address) and global_params.USE_GLOBAL_BLOCKCHAIN:
-                    code = data_source.getCode(address)
+                if vp.isReal(address) and global_params.USE_GLOBAL_BLOCKCHAIN:
+                    code = self.data_source.getCode(address)
                     stack.insert(0, len(code) / 2)
                 else:
                     # not handled yet
@@ -1055,19 +1080,19 @@ class Verifier():
                 no_bytes = stack.pop(0)
                 current_miu_i = global_state["miu_i"]
 
-                if contains_only_concrete_values(
+                if vp.contains_only_concrete_values(
                         [adress, mem_location, current_miu_i, code_from, no_bytes]) and USE_GLOBAL_BLOCKCHAIN:
                     temp = long(math.ceil((mem_location + no_bytes) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
 
-                    evm = data_source.getCode(address)
+                    evm = self.data_source.getCode(address)
                     start = code_from * 2
                     end = start + no_bytes * 2
                     code = evm[start: end]
                     mem[mem_location] = code
                 else:
-                    new_var_name = gen.gen_code_var(address, code_from, no_bytes)
+                    new_var_name = self.gen.gen_code_var(address, code_from, no_bytes)
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
@@ -1075,7 +1100,7 @@ class Verifier():
                         path_conditions_and_vars[new_var_name] = new_var
 
                     temp = ((mem_location + no_bytes) / 32) + 1
-                    current_miu_i = to_symbolic(current_miu_i)
+                    current_miu_i = vp.to_symbolic(current_miu_i)
                     expression = current_miu_i < temp
                     self.solver.push()
                     self.solver.add(expression)
@@ -1132,7 +1157,7 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 address = stack.pop(0)
                 current_miu_i = global_state["miu_i"]
-                if contains_only_concrete_values([address, current_miu_i]) and address in mem:
+                if vp.contains_only_concrete_values([address, current_miu_i]) and address in mem:
                     temp = long(math.ceil((address + 32) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
@@ -1142,7 +1167,7 @@ class Verifier():
                     self.log.debug("current_miu_i: " + str(current_miu_i))
                 else:
                     temp = ((address + 31) / 32) + 1
-                    current_miu_i = to_symbolic(current_miu_i)
+                    current_miu_i = vp.to_symbolic(current_miu_i)
                     expression = current_miu_i < temp
                     self.solver.push()
                     self.solver.add(expression)
@@ -1150,14 +1175,14 @@ class Verifier():
                         # this means that it is possibly that current_miu_i < temp
                         current_miu_i = If(expression, temp, current_miu_i)
                     self.solver.pop()
-                    new_var_name = gen.gen_mem_var(address)
+                    new_var_name = self.gen.gen_mem_var(address)
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
                         new_var = BitVec(new_var_name, 256)
                         path_conditions_and_vars[new_var_name] = new_var
                     stack.insert(0, new_var)
-                    if isReal(address):
+                    if vp.isReal(address):
                         mem[address] = new_var
                     else:
                         mem[str(address)] = new_var
@@ -1172,7 +1197,7 @@ class Verifier():
                 stored_address = stack.pop(0)
                 stored_value = stack.pop(0)
                 current_miu_i = global_state["miu_i"]
-                if isReal(stored_address):
+                if vp.isReal(stored_address):
                     # preparing data for hashing later
                     old_size = len(memory) // 32
                     new_size = ceil32(stored_address + 32) // 32
@@ -1181,7 +1206,7 @@ class Verifier():
                     for i in range(31, -1, -1):
                         memory[stored_address + i] = stored_value % 256
                         stored_value /= 256
-                if contains_only_concrete_values([stored_address, current_miu_i]):
+                if vp.contains_only_concrete_values([stored_address, current_miu_i]):
                     temp = long(math.ceil((stored_address + 32) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
@@ -1214,14 +1239,14 @@ class Verifier():
                 temp_value = stack.pop(0)
                 stored_value = temp_value % 256  # get the least byte
                 current_miu_i = global_state["miu_i"]
-                if contains_only_concrete_values([stored_address, current_miu_i]):
+                if vp.contains_only_concrete_values([stored_address, current_miu_i]):
                     temp = long(math.ceil((stored_address + 1) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
                     mem[stored_address] = stored_value  # note that the stored_value could be symbolic
                 else:
                     temp = (stored_address / 32) + 1
-                    if isReal(current_miu_i):
+                    if vp.isReal(current_miu_i):
                         current_miu_i = BitVecVal(current_miu_i, 256)
                     expression = current_miu_i < temp
                     self.solver.push()
@@ -1246,14 +1271,14 @@ class Verifier():
                     value = global_state["Ia"][str(address)]
                     stack.insert(0, value)
                 else:
-                    new_var_name = gen.gen_owner_store_var(address)
+                    new_var_name = self.gen.gen_owner_store_var(address)
                     if new_var_name in path_conditions_and_vars:
                         new_var = path_conditions_and_vars[new_var_name]
                     else:
                         new_var = BitVec(new_var_name, 256)
                         path_conditions_and_vars[new_var_name] = new_var
                     stack.insert(0, new_var)
-                    if isReal(address):
+                    if vp.isReal(address):
                         global_state["Ia"][address] = new_var
                     else:
                         global_state["Ia"][str(address)] = new_var
@@ -1264,7 +1289,7 @@ class Verifier():
                 global_state["pc"] = global_state["pc"] + 1
                 stored_address = stack.pop(0)
                 stored_value = stack.pop(0)
-                if isReal(stored_address):
+                if vp.isReal(stored_address):
                     # note that the stored_value could be unknown
                     global_state["Ia"][stored_address] = stored_value
                 else:
@@ -1275,7 +1300,7 @@ class Verifier():
         elif instr_parts[0] == "JUMP":
             if len(stack) > 0:
                 target_address = stack.pop(0)
-                if isSymbolic(target_address):
+                if vp.isSymbolic(target_address):
                     try:
                         target_address = int(str(simplify(target_address)))
                     except:
@@ -1289,7 +1314,7 @@ class Verifier():
             # We need to prepare two branches
             if len(stack) > 1:
                 target_address = stack.pop(0)
-                if isSymbolic(target_address):
+                if vp.isSymbolic(target_address):
                     try:
                         target_address = int(str(simplify(target_address)))
                     except:
@@ -1297,7 +1322,7 @@ class Verifier():
                 self.vertices[start].set_jump_target(target_address)
                 flag = stack.pop(0)
                 branch_expression = (BitVecVal(0, 1) == BitVecVal(1, 1))
-                if isReal(flag):
+                if vp.isReal(flag):
                     if flag != 0:
                         branch_expression = True
                 else:
@@ -1320,7 +1345,7 @@ class Verifier():
             # we need o think about this in the future, in case precise gas
             # can be tracked
             global_state["pc"] = global_state["pc"] + 1
-            new_var_name = gen.gen_gas_var()
+            new_var_name = self.gen.gen_gas_var()
             new_var = BitVec(new_var_name, 256)
             path_conditions_and_vars[new_var_name] = new_var
             stack.insert(0, new_var)
@@ -1390,7 +1415,7 @@ class Verifier():
                 # in the paper, it is shaky when the size of data output is
                 # min of stack[6] and the | o |
 
-                if isReal(transfer_amount):
+                if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
                         return
@@ -1424,11 +1449,11 @@ class Verifier():
                         global_state["balance"]["Is"] = new_balance_is
                     else:
                         self.solver.pop()
-                        if isReal(recipient):
+                        if vp.isReal(recipient):
                             new_address_name = "concrete_address_" + str(recipient)
                         else:
-                            new_address_name = gen.gen_arbitrary_address_var()
-                        old_balance_name = gen.gen_arbitrary_var()
+                            new_address_name = self.gen.gen_arbitrary_address_var()
+                        old_balance_name = self.gen.gen_arbitrary_var()
                         old_balance = BitVec(old_balance_name, 256)
                         path_conditions_and_vars[old_balance_name] = old_balance
                         constraint = (old_balance >= 0)
@@ -1452,7 +1477,7 @@ class Verifier():
                 # in the paper, it is shaky when the size of data output is
                 # min of stack[6] and the | o |
 
-                if isReal(transfer_amount):
+                if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
                         return
@@ -1490,11 +1515,11 @@ class Verifier():
             recipient = stack.pop(0)
             transfer_amount = global_state["balance"]["Ia"]
             global_state["balance"]["Ia"] = 0
-            if isReal(recipient):
+            if vp.isReal(recipient):
                 new_address_name = "concrete_address_" + str(recipient)
             else:
-                new_address_name = gen.gen_arbitrary_address_var()
-            old_balance_name = gen.gen_arbitrary_var()
+                new_address_name = self.gen.gen_arbitrary_address_var()
+            old_balance_name = self.gen.gen_arbitrary_var()
             old_balance = BitVec(old_balance_name, 256)
             path_conditions_and_vars[old_balance_name] = old_balance
             constraint = (old_balance >= 0)
