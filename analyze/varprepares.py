@@ -7,9 +7,11 @@ import json
 import re
 import os
 from z3 import *
+from z3.z3util import get_vars
 import logging
 from opcode import *
-
+# from global_params import *
+import global_params
 
 # there are a variable generator class in neighbor file
 from generator import Generator
@@ -82,7 +84,7 @@ def read_state(filepath):
     return g_state, in_state
 
 # default values of path_conditions_and_vars{}
-def generate_defauls(g_state, in_state):
+def generate_defaults(g_state, in_state):
     """the empty keys in inputs are generated with defaults values
     the process returns path conditions and update g_state; using z3's BitVec func
     :param: g_state {} in_state {}
@@ -480,3 +482,98 @@ def to_signed(number):
         return (2**(256) - number) * (-1)
     else:
         return number
+
+
+# utils partly
+# Rename variables to distinguish variables in two different paths.
+# e.g. Ia_store_0 in path i becomes Ia_store_0_old if Ia_store_0 is modified
+# else we must keep Ia_store_0 if its not modified
+def rename_vars(pcs, global_states):
+    ret_pcs = []
+    vars_mapping = {}
+
+    for expr in pcs:
+        list_vars = get_vars(expr)
+        for var in list_vars:
+            if var in vars_mapping:
+                expr = substitute(expr, (var, vars_mapping[var]))
+                continue
+            var_name = var.decl().name()
+            # check if a var is global
+            if var_name.startswith("Ia_store_"):
+                position = var_name.split('Ia_store_')[1]
+                # if it is not modified then keep the previous name
+                if position not in global_states:
+                    continue
+            # otherwise, change the name of the variable
+            new_var_name = var_name + '_old'
+            new_var = BitVec(new_var_name, 256)
+            vars_mapping[var] = new_var
+            expr = substitute(expr, (var, vars_mapping[var]))
+        ret_pcs.append(expr)
+
+    ret_gs = {}
+    # replace variable in storage expression
+    for storage_addr in global_states:
+        expr = global_states[storage_addr]
+        # z3 4.1 makes me add this line
+        if is_expr(expr):
+            list_vars = get_vars(expr)
+            for var in list_vars:
+                if var in vars_mapping:
+                    expr = substitute(expr, (var, vars_mapping[var]))
+                    continue
+                var_name = var.decl().name()
+                # check if a var is global
+                if var_name.startswith("Ia_store_"):
+                    position = int(var_name.split('_')[len(var_name.split('_'))-1])
+                    # if it is not modified
+                    if position not in global_states:
+                        continue
+                # otherwise, change the name of the variable
+                new_var_name = var_name + '_old'
+                new_var = BitVec(new_var_name, 256)
+                vars_mapping[var] = new_var
+                expr = substitute(expr, (var, vars_mapping[var]))
+        ret_gs[storage_addr] = expr
+
+    return ret_pcs, ret_gs
+
+
+# Check if this call has the Reentrancy bug
+# Return true if it does, false otherwise
+def check_reentrancy_bug(path_conditions_and_vars, global_state):
+    path_condition = path_conditions_and_vars["path_condition"]
+    new_path_condition = []
+    for expr in path_condition:
+        if not is_expr(expr):
+            continue
+        list_vars = get_vars(expr)
+        for var in list_vars:
+            var_name = var.decl().name()
+            # check if a var is global
+            if var_name.startswith("Ia_store_"):
+                storage_key = var_name.split("Ia_store_")[1]
+                try:
+                    if int(storage_key) in global_state["Ia"]:
+                        new_path_condition.append(var == global_state["Ia"][int(storage_key)])
+                except:
+                    if storage_key in global_state["Ia"]:
+                        new_path_condition.append(var == global_state["Ia"][storage_key])
+    log.info("=>>>>>> New PC: " + str(new_path_condition))
+
+    solver = Solver()
+    solver.set("timeout", global_params.TIMEOUT)
+    solver.push()
+    solver.add(path_condition)
+    solver.add(new_path_condition)
+    # if it is not feasible to re-execute the call, its not a bug
+    ret_val = not (solver.check() == unsat)
+    solver.pop()
+    log.info("Reentrancy_bug? " + str(ret_val))
+    # global reported
+    # if not reported:
+    #     with open(reentrancy_report_file, 'a') as r_report:
+    #         r_report.write('\n'+cur_file)
+    #     reported = True
+    return ret_val

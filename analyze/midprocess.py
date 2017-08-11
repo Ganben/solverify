@@ -9,6 +9,7 @@ import zlib, base64
 from tokenize import NUMBER, NAME, NEWLINE
 import logging
 from basicblock import BasicBlock
+from io import BytesIO
 
 
 # default logger
@@ -93,8 +94,9 @@ def construction_var(disasm_raw):
     :param: disasm raw, lines [] by input
     :returns: the replaced disasm [] and tokenlist []"""
     disasm_list = disasm_raw.split('\n')
+    i = 0
     try:
-        for line in disasm_list:
+        for line in disasm_list[1:]:
             line = line.replace('SELFDESTRUCT', 'SUICIDE')
             line = line.replace('Missing opcode 0xfd', 'REVERT')
             line = line.replace('Missing opcode 0xfe', 'ASSERTFAIL')
@@ -117,15 +119,21 @@ def construction_var(disasm_raw):
                 pass
             disasm_list[i] = ' '.join(lineParts)
             i = i + 1
+        disasm_list[-1] += '\n'
     except Exception as e:
         log.error(' block 121 error: %s ' % e)
         raise
 
-    try:
-        tokenlist = tokenize.generate_tokens(disasm_list)
-    except Exception as e:
-        log.error(' block 127 error: %s ' % e)
-        raise
+    with open('temp2.disasm', 'w') as of:
+        of.write('\n'.join(disasm_list))
+
+    # with open('temp2.disasm', 'r') as of:
+        # of.readline()
+    lasm = '\n'.join(disasm_list)
+    tokenlist = tokenize.generate_tokens(BytesIO(lasm.encode('utf-8')).readline)
+#    except Exception as e:
+#            log.error(' block 127 error: %s ' % e)
+#            raise
 
     return disasm_list, tokenlist
 
@@ -156,7 +164,15 @@ def cons_token2vertices(tokens):
     end_ins_dict = {}
     instructions = {}
     jump_type = {}
-    for tok_type, tok_string, (srow, scol), _, line_number in tokens:
+    linewriter = []
+    for tok_type, tok_string, (srow, scol), (rx1, rx2), line_number in tokens:
+        linewriter.append('%s %s %s %s %s %s %s---\n' % (tok_type,
+                                                         tok_string,
+                                                         srow,
+                                                         scol,
+                                                         rx1,
+                                                         rx2,
+                                                         line_number))
         if wait_for_push is True:
             push_val = ""
             for ptok_type, ptok_string, _, _, _ in tokens:
@@ -229,10 +245,13 @@ def cons_token2vertices(tokens):
         if key not in jump_type:
             jump_type[key] = "falls_to"
 
-    with open('vertercies', 'w') as of:
+    with open('temp_vertercies', 'w') as of:
         of.write(str(end_ins_dict))
         of.write(str(instructions))
-        of.write(jump_type)
+        of.write(str(jump_type))
+
+    with open('temp_tokenlist', 'w') as of:
+        of.write(''.join(linewriter))
 
     return end_ins_dict, instructions, jump_type
 

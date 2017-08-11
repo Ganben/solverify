@@ -9,13 +9,13 @@ import base64
 import traceback
 import varprepares as vp
 import midprocess as mp
-import preprocess as pp
+import preprocess as prp
 import global_params
 from utils import *
 from collections import namedtuple
 from ethereum_data import *
 from assertion import Assertion
-
+from generator import Generator
 
 UNSIGNED_BOUND_NUMBER = 2**256 - 1
 CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
@@ -42,7 +42,7 @@ class Verifier():
         self.opcode = None
         self.is_loaded = False
         # symbolic exec
-
+        self.tokenlist = []
         self.block = 0
         self.pre_block = 0
         self.visited = []
@@ -60,6 +60,8 @@ class Verifier():
         self.analysis = vp.init_analysis()
         self.path = []
         self.models = []
+
+        self.gen = Generator()
 
         self.solver = Solver()
         self.solver.set("timeout", global_params.TIMEOUT)
@@ -96,20 +98,14 @@ class Verifier():
         """
         if self.is_loaded:
             if not self.evm:
-                _, _, eres = pp.sol2evm(self.sol)
+                _, _, eres = prp.sol_evm(self.sol)
                 self.evm = eres[0]  #no need list, if so need depre sol input; :TODO: warn multi
             try:
-
-                self.disasm_raw = pp.evm2opcode(self.evm)
-
+                self.disasm_raw = evm_opcode(self.evm)
                 self.disasm, self.tokens = mp.construction_var(self.disasm_raw)  #TODO: check call type
-
                 self.end_ins_dict, self.instructions, self.jump_type = mp.cons_token2vertices(self.tokens)
-
                 self.vertices, self.edges = mp.cons_basicblock(self.end_ins_dict, self.instructions, self.jump_type)
-
                 self.vertices, self.edges = mp.cons_static_edges(self.jump_type, self.vertices, self.edges)
-
             except Exception as e:
                 self.log.error(' verifier compile error: %s ' % e)
                 raise
@@ -1004,14 +1000,16 @@ class Verifier():
             else:
                 raise ValueError('STACK underflow')
         elif instr_parts[0] == "CODESIZE":
-            if c_name.endswith('.disasm'):
-                evm_file_name = c_name[:-7]
-            else:
-                evm_file_name = c_name
-            with open(evm_file_name, 'r') as evm_file:
-                evm = evm_file.read()[:-1]
-                code_size = len(evm) / 2
-                stack.insert(0, code_size)
+            # if c_name.endswith('.disasm'):
+            #     evm_file_name = c_name[:-7]
+            # else:
+            #     evm_file_name = c_name
+            # with open(evm_file_name, 'r') as evm_file:
+            #     evm = evm_file.read()[:-1]
+            # rewrite for different data save loc
+            evm = self.evm[:-1]
+            code_size = len(evm) / 2
+            stack.insert(0, code_size)
         elif instr_parts[0] == "CODECOPY":
             if len(stack) > 2:
                 global_state["pc"] = global_state["pc"] + 1
@@ -1025,12 +1023,13 @@ class Verifier():
                     if temp > current_miu_i:
                         current_miu_i = temp
 
-                    if c_name.endswith('.disasm'):
-                        evm_file_name = c_name[:-7]
-                    else:
-                        evm_file_name = c_name
-                    with open(evm_file_name, 'r') as evm_file:
-                        evm = evm_file.read()[:-1]
+                    # if c_name.endswith('.disasm'):
+                    #     evm_file_name = c_name[:-7]
+                    # else:
+                    #     evm_file_name = c_name
+                    # with open(evm_file_name, 'r') as evm_file:
+                    #     evm = evm_file.read()[:-1]
+                        evm = self.evm[:-1]
                         start = code_from * 2
                         end = start + no_bytes * 2
                         code = evm[start: end]
@@ -1081,7 +1080,7 @@ class Verifier():
                 current_miu_i = global_state["miu_i"]
 
                 if vp.contains_only_concrete_values(
-                        [adress, mem_location, current_miu_i, code_from, no_bytes]) and USE_GLOBAL_BLOCKCHAIN:
+                        [address, mem_location, current_miu_i, code_from, no_bytes]) and global_params.USE_GLOBAL_BLOCKCHAIN:
                     temp = long(math.ceil((mem_location + no_bytes) / float(32)))
                     if temp > current_miu_i:
                         current_miu_i = temp
@@ -1534,7 +1533,27 @@ class Verifier():
             self.log.debug("UNKNOWN INSTRUCTION: " + instr_parts[0])
             if global_params.UNIT_TEST == 2 or global_params.UNIT_TEST == 3:
                 self.log.critical("Unkown instruction: %s" % instr_parts[0])
-                exit(UNKOWN_INSTRUCTION)
+                # exit(UNKOWN_INSTRUCTION)
+                pass
             raise Exception('UNKNOWN INSTRUCTION: ' + instr_parts[0])
 
         vp.print_state(stack, mem, global_state)
+
+def evm_opcode(evmcode):
+    """
+    use subprocess call evm command to generate opcode
+    :param evmcode: a stream of evm bytecode
+    :return: a opcode, also in 'temp.disasm'
+    """
+    with open('temp.evm', 'w') as tempfile:
+        tempfile.write(evmcode)
+    try:
+        disasm_p = subprocess.Popen(
+            ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
+        disasm_out = disasm_p.communicate()[0]
+    except Exception as e:
+        # print(e)
+        raise
+    with open('temp.disasm', 'w') as tempfile:
+        tempfile.write(disasm_out)
+    return disasm_out

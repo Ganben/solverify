@@ -8,13 +8,13 @@ import os
 import re
 import shlex
 
-#the sol to evm function
-def sol2evm(solcode):
-    '''
+# the sol to evm function
+def sol_evm(solcode):
+    """
     use subprocess PIPE to call solc command, generate evm
     :param solcode: string of input solidity code
     :return: a list of cname, a list evm bytecode
-    '''
+    """
     with open('temp.sol', 'w') as tempfile:
         tempfile.write(solcode)
     solc_cmd = "solc --optimize --bin-runtime %s"
@@ -37,13 +37,13 @@ def sol2evm(solcode):
             recon.append(bin_str)
     return filelist, evmlist, recon
 
-#this is to read evm code and generate opcode and file
-def evm2opcode(evmcode):
-    '''
+# this is to read evm code and generate opcode and file
+def evm_opcode(evmcode):
+    """
     use subprocess call evm command to generate opcode
     :param evmcode: a stream of evm bytecode
     :return: a opcode, also in 'temp.disasm'
-    '''
+    """
     with open('temp.evm', 'w') as tempfile:
         tempfile.write(evmcode)
     try:
@@ -51,7 +51,7 @@ def evm2opcode(evmcode):
             ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
         disasm_out = disasm_p.communicate()[0]
     except Exception as e:
-        print(e)
+        # print(e)
         raise
     with open('temp.disasm', 'w') as tempfile:
         tempfile.write(disasm_out)

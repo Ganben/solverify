@@ -7,6 +7,7 @@ from flask import Flask, redirect, url_for
 from flask import request
 import shlex, re, os
 import subprocess
+from analyze.verifier import Verifier
 
 app = Flask(__name__)
 
@@ -76,6 +77,12 @@ def analyze():
             <p><input type=submit value=Analyze>
         </form>
     '''
+    evmcode = request.form['code']
+    v = Verifier()
+    v.load_byte(evmcode)
+    v.compile()
+    v.check_all()
+    return v.results
 
 
 @app.route('/address/<c_addr>')
