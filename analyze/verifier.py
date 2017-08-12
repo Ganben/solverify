@@ -10,6 +10,7 @@ import traceback
 import varprepares as vp
 import midprocess as mp
 import preprocess as prp
+import detect as dt
 import global_params
 from utils import *
 from collections import namedtuple
@@ -151,6 +152,7 @@ class Verifier():
                 raise
             # try every check items
             try:
+                # check callstack first:
                 self.check_callstack_attack()
                 # find the initial exec of this analysis
                 self.sym_exec_block(self.block, self.pre_block, self.visited, self.depth, self.stack,
@@ -160,6 +162,17 @@ class Verifier():
                 self.log.error(' check all %s ' % e)
                 raise
 
+            # detect money concurrency:
+            self.results['concurrency'] = dt.detect_money_concurrency(self.money_flow_all_paths,
+                                                                      self.all_gs,
+                                                                      self.path_conditions)
+
+            # detect time dependency:
+            self.results['time_dependency'] = dt.detect_time_dependency(self.path_conditions)
+
+            # detect reentrancy bug:
+            self.results['reentrancy'] = dt.detect_reentrancy(self.reentrancy_all_paths)
+            #
 
         else:
             raise BaseException('Load source first')
@@ -172,7 +185,7 @@ class Verifier():
         """
         if self.disasm:
             try:
-                r = vp.run_callstack_attack(self.disasm)
+                r = vp.run_callstack_attack(self.disasm_raw)
                 self.results['callstack'] = r['callstack']
             except Exception as e:
                 self.log.error(e)
@@ -1557,3 +1570,4 @@ def evm_opcode(evmcode):
     with open('temp.disasm', 'w') as tempfile:
         tempfile.write(disasm_out)
     return disasm_out
+
