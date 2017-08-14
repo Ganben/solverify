@@ -394,7 +394,7 @@ def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_
     :param global_state:
     :param path_conditions_and_vars:
     :param solver:
-    :return:
+    :return: analysis,
     """
     gas_increment, gas_memory = calculate_gas(opcode, stack, mem, global_state, analysis, solver)
     analysis["gas"] += gas_increment
@@ -406,7 +406,7 @@ def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_
         reentrancy_result = check_reentrancy_bug(path_conditions_and_vars, global_state)
         analysis["reentrancy_bug"].append(reentrancy_result)
         if isinstance(transfer_amount, (int, long)) and transfer_amount == 0:
-            return
+            return analysis
         if not isinstance(recipient, (int, long)):
             recipient = simplify(recipient)
         analysis["money_flow"].append(("Ia", str(recipient), transfer_amount))
@@ -443,6 +443,7 @@ def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_
                     analysis["sstore"][stored_address] = [stored_value]
             else:
                 raise ValueError('STACK underflow')
+    return analysis
 
 # for shit reason moved;
 def print_state(stack, mem, global_state):
@@ -576,4 +577,5 @@ def check_reentrancy_bug(path_conditions_and_vars, global_state):
     #     with open(reentrancy_report_file, 'a') as r_report:
     #         r_report.write('\n'+cur_file)
     #     reported = True
+    print 'reentrancy value %s ' % ret_val
     return ret_val

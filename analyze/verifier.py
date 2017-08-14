@@ -58,7 +58,7 @@ class Verifier():
 
         self.global_state = g_state
         self.path_conditions_and_vars = path_conditions_and_vars
-        self.analysis = vp.init_analysis()
+        # self.analysis = vp.init_analysis()
         self.path = []
         self.models = []
 
@@ -153,11 +153,13 @@ class Verifier():
             # try every check items
             try:
                 # check callstack first:
+                analysis = vp.init_analysis()
                 self.check_callstack_attack()
                 # find the initial exec of this analysis
-                self.sym_exec_block(self.block, self.pre_block, self.visited, self.depth, self.stack,
+                self.sym_exec_block(0, 0, self.visited, self.depth, self.stack,
                                     self.mem, self.memory, self.global_state, self.path_conditions_and_vars,
-                                    self.analysis, self.path, self.models)
+                                    analysis, [], [])
+                # the given var and global var are still suspicious
             except Exception as e:
                 self.log.error(' check all %s ' % e)
                 raise
@@ -251,8 +253,10 @@ class Verifier():
             raise
 
         for instr in block_ins:
-            self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
+            # must update many var from local scope due to shit old coding
+            analysis, global_state = self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
                          models)
+            #
             # Mark that this basic block in the visited blocks
         visited.append(block)
         depth += 1
@@ -369,6 +373,7 @@ class Verifier():
                     path_conditions_and_vars1 = my_copy_dict(path_conditions_and_vars)
                     path_conditions_and_vars1["path_condition"].append(negated_branch_expression)
                     analysis1 = my_copy_dict(analysis)
+                    # print ' error sym block global %s ' % global_state
                     self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
             except Exception as e:
@@ -388,7 +393,6 @@ class Verifier():
 
     def sym_exec_ins(self, start, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path, models):
         """
-
         :param start:
         :param instr:
         :param stack:
@@ -399,7 +403,7 @@ class Verifier():
         :param analysis:
         :param path:
         :param models:
-        :return:
+        :return: analysis, global_state, stack, memory, mem
         """
         # global solver = self.
         # global vertices
@@ -409,7 +413,7 @@ class Verifier():
         instr_parts = str.split(instr, ' ')
 
         if instr_parts[0] == "INVALID":
-            return
+            return analysis, global_state
         elif instr_parts[0] == "ASSERTFAIL":
             # We only consider assertions blocks that already start with ASSERTFAIL,
             # without any JUMPDEST
@@ -432,12 +436,15 @@ class Verifier():
                     assertion.set_path(path + [start])
                     assertion.set_sym(path_conditions_and_vars)
                     self.assertions.append(assertion)
-            return
+            return analysis, global_state
 
         # collecting the analysis result by calling this skeletal function
         # this should be done before symbolically executing the instruction,
         # since SE will modify the stack and mem
-        vp.update_analysis(analysis, instr_parts[0], stack, mem, global_state, path_conditions_and_vars, self.solver)
+        analysis = vp.update_analysis(analysis, instr_parts[0], stack, mem, global_state, path_conditions_and_vars, self.solver)
+        print ' ins updated %s ' % analysis
+        # analysis.update(new_analysis)
+
 
         self.log.debug("==============================")
         self.log.debug("EXECUTING: " + instr)
@@ -447,7 +454,7 @@ class Verifier():
         #
         if instr_parts[0] == "STOP":
             global_state["pc"] = global_state["pc"] + 1
-            return
+            return analysis, global_state
         elif instr_parts[0] == "ADD":
             if len(stack) > 1:
                 global_state["pc"] = global_state["pc"] + 1
@@ -1430,7 +1437,7 @@ class Verifier():
                 if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
-                        return
+                        return analysis, global_state
 
                 # Let us ignore the call depth
                 balance_ia = global_state["balance"]["Ia"]
@@ -1492,7 +1499,7 @@ class Verifier():
                 if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
-                        return
+                        return analysis, global_state
 
                 # Let us ignore the call depth
                 balance_ia = global_state["balance"]["Ia"]
@@ -1540,7 +1547,7 @@ class Verifier():
             new_balance = (old_balance + transfer_amount)
             global_state["balance"][new_address_name] = new_balance
             # TODO
-            return
+            return analysis, global_state
 
         else:
             self.log.debug("UNKNOWN INSTRUCTION: " + instr_parts[0])
@@ -1551,6 +1558,8 @@ class Verifier():
             raise Exception('UNKNOWN INSTRUCTION: ' + instr_parts[0])
 
         vp.print_state(stack, mem, global_state)
+
+        return analysis, global_state   #  , stack, memory, mem)
 
 def evm_opcode(evmcode):
     """
