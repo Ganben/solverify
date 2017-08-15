@@ -303,7 +303,8 @@ def calculate_gas(opcode, stack, mem, global_state, analysis, solver):
     length = len(mem.keys()) # number of memory words
     new_gas_memory = GCOST["Gmemory"] * length + (length ** 2) // 512
     gas_increment += new_gas_memory - gas_memory
-
+    #if gas_increment > 0:
+    #    print ' length of gas_mem %s ' % length
     return (gas_increment, new_gas_memory)
 
 # following are some useful funcs that from analysis.py
@@ -386,7 +387,6 @@ def is_diff(flow1, flow2):
 # update_analysis
 def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_and_vars, solver):
     """unchanged trans
-
     :param analysis:
     :param opcode:
     :param stack:
@@ -399,10 +399,11 @@ def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_
     gas_increment, gas_memory = calculate_gas(opcode, stack, mem, global_state, analysis, solver)
     analysis["gas"] += gas_increment
     analysis["gas_mem"] = gas_memory
-
+    # print 'current gas = %s ' % (analysis['gas'] - gas_increment)
     if opcode == "CALL":
         recipient = stack[1]
         transfer_amount = stack[2]
+        print 'check >>>>>>>>>>>>>>>>>>>'
         reentrancy_result = check_reentrancy_bug(path_conditions_and_vars, global_state)
         analysis["reentrancy_bug"].append(reentrancy_result)
         if isinstance(transfer_amount, (int, long)) and transfer_amount == 0:

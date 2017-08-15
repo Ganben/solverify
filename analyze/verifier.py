@@ -224,9 +224,10 @@ class Verifier():
         # pre execution check
         if block < 0:
             self.log.debug("UNKNOWN JUMP ADDRESS. TERMINATING THIS PATH")
-            return ["ERROR"]
+            return stack
 
         self.log.debug("Reach block address %d \n", block)
+        print 'stack = %s , mem = %s, gas = %s' % (stack, mem, analysis['gas'])
         self.log.debug("STACK: " + str(stack))
 
         current_edge = self.Edge(pre_block, block)
@@ -238,11 +239,13 @@ class Verifier():
 
         if self.visited_edges[current_edge] > global_params.LOOP_LIMIT:
             self.log.debug("Overcome a number of loop limit. Terminating this path ...")
+            print ' branch 241 '
             return stack
 
         current_gas_used = analysis["gas"]
         if current_gas_used > global_params.GAS_LIMIT:
             self.log.debug("Run out of gas. Terminating this path ... ")
+            print ' branch 247 '
             return stack
 
         # recursively execution instruction, one at a time
@@ -250,11 +253,12 @@ class Verifier():
             block_ins = self.vertices[block].get_instructions()
         except KeyError:
             self.log.debug("This path results in an exception, possibly an invalid jump address")
-            raise
+            return stack
 
         for instr in block_ins:
             # must update many var from local scope due to shit old coding
-            analysis, global_state = self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
+            print 'exec instr %s ' % instr
+            analysis, global_state, stack, memory, mem = self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
                          models)
             #
             # Mark that this basic block in the visited blocks
@@ -290,6 +294,7 @@ class Verifier():
                 # compare_storage_and_memory_unit_test(global_state, mem, analysis)
 
         elif self.jump_type[block] == "unconditional":  # executing "JUMP"
+            print ' branch 295 '
             successor = self.vertices[block].get_jump_target()
             stack1 = list(stack)
             mem1 = dict(mem)
@@ -299,9 +304,13 @@ class Verifier():
             visited1 = list(visited)
             path_conditions_and_vars1 = my_copy_dict(path_conditions_and_vars)
             analysis1 = my_copy_dict(analysis)
-            self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
+            res = self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
                            path_conditions_and_vars1, analysis1, path + [block], models)
+            if len(res) > len(stack):
+                stack = res
+
         elif self.jump_type[block] == "falls_to":  # just follow to the next basic block
+            print ' branch 305 '
             successor = self.vertices[block].get_falls_to()
             stack1 = list(stack)
             mem1 = dict(mem)
@@ -311,8 +320,10 @@ class Verifier():
             visited1 = list(visited)
             path_conditions_and_vars1 = my_copy_dict(path_conditions_and_vars)
             analysis1 = my_copy_dict(analysis)
-            self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
+            res = self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
                            path_conditions_and_vars1, analysis1, path + [block], models)
+            if len(res) > len(stack):
+                stack = res
         elif self.jump_type[block] == "conditional":  # executing "JUMPI"
 
             # A choice point, we proceed with depth first search
@@ -328,6 +339,7 @@ class Verifier():
                 if self.solver.check() == unsat:
                     self.log.debug("INFEASIBLE PATH DETECTED")
                 else:
+                    print ' branch 335 %s' % depth
                     left_branch = self.vertices[block].get_jump_target()
                     stack1 = list(stack)
                     mem1 = dict(mem)
@@ -338,8 +350,11 @@ class Verifier():
                     path_conditions_and_vars1 = my_copy_dict(path_conditions_and_vars)
                     path_conditions_and_vars1["path_condition"].append(branch_expression)
                     analysis1 = my_copy_dict(analysis)
-                    self.sym_exec_block(left_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
+                    res = self.sym_exec_block(left_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
+                    if len(res)>len(stack):
+                        stack = res
+
             except Exception as e:
                 self.log.error('recursive error: %s ' % e)
                 # log_file.write(str(e))
@@ -363,6 +378,7 @@ class Verifier():
                     # the else branch
                     self.log.debug("INFEASIBLE PATH DETECTED")
                 else:
+                    print ' branch 371 depth %s' % depth
                     right_branch = self.vertices[block].get_falls_to()
                     stack1 = list(stack)
                     mem1 = dict(mem)
@@ -374,8 +390,10 @@ class Verifier():
                     path_conditions_and_vars1["path_condition"].append(negated_branch_expression)
                     analysis1 = my_copy_dict(analysis)
                     # print ' error sym block global %s ' % global_state
-                    self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
+                    res = self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
+                    if len(res)>len(stack):
+                        stack = res
             except Exception as e:
                 # log_file.write(str(e))
                 traceback.print_exc()
@@ -389,6 +407,7 @@ class Verifier():
             updated_count_number = self.visited_edges[current_edge] - 1
             self.visited_edges.update({current_edge: updated_count_number})
             raise Exception('Unknown Jump-Type')
+        return stack
 
 
     def sym_exec_ins(self, start, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path, models):
@@ -413,7 +432,7 @@ class Verifier():
         instr_parts = str.split(instr, ' ')
 
         if instr_parts[0] == "INVALID":
-            return analysis, global_state
+            return analysis, global_state, stack, memory, mem
         elif instr_parts[0] == "ASSERTFAIL":
             # We only consider assertions blocks that already start with ASSERTFAIL,
             # without any JUMPDEST
@@ -428,6 +447,7 @@ class Verifier():
                     for i in range(0, 5):
                         if not block_instrs[i].startswith(instrs[i]):
                             is_init_callvalue = False
+                            print '450 break'
                             break
                 if from_block != 0 and not is_init_callvalue:
                     assertion = Assertion(start)
@@ -436,13 +456,13 @@ class Verifier():
                     assertion.set_path(path + [start])
                     assertion.set_sym(path_conditions_and_vars)
                     self.assertions.append(assertion)
-            return analysis, global_state
+            return analysis, global_state, stack, memory, mem
 
         # collecting the analysis result by calling this skeletal function
         # this should be done before symbolically executing the instruction,
         # since SE will modify the stack and mem
         analysis = vp.update_analysis(analysis, instr_parts[0], stack, mem, global_state, path_conditions_and_vars, self.solver)
-        print ' ins updated %s ' % analysis
+        # print ' ins updated %s ' % analysis
         # analysis.update(new_analysis)
 
 
@@ -454,7 +474,7 @@ class Verifier():
         #
         if instr_parts[0] == "STOP":
             global_state["pc"] = global_state["pc"] + 1
-            return analysis, global_state
+            return analysis, global_state, stack, memory, mem
         elif instr_parts[0] == "ADD":
             if len(stack) > 1:
                 global_state["pc"] = global_state["pc"] + 1
@@ -1437,7 +1457,7 @@ class Verifier():
                 if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
-                        return analysis, global_state
+                        return analysis, global_state, stack, memory, mem
 
                 # Let us ignore the call depth
                 balance_ia = global_state["balance"]["Ia"]
@@ -1499,7 +1519,7 @@ class Verifier():
                 if vp.isReal(transfer_amount):
                     if transfer_amount == 0:
                         stack.insert(0, 1)  # x = 0
-                        return analysis, global_state
+                        return analysis, global_state, stack, memory, mem
 
                 # Let us ignore the call depth
                 balance_ia = global_state["balance"]["Ia"]
@@ -1547,7 +1567,7 @@ class Verifier():
             new_balance = (old_balance + transfer_amount)
             global_state["balance"][new_address_name] = new_balance
             # TODO
-            return analysis, global_state
+            return analysis, global_state, stack, memory, mem
 
         else:
             self.log.debug("UNKNOWN INSTRUCTION: " + instr_parts[0])
@@ -1559,7 +1579,7 @@ class Verifier():
 
         vp.print_state(stack, mem, global_state)
 
-        return analysis, global_state   #  , stack, memory, mem)
+        return analysis, global_state, stack, memory, mem   #  , stack, memory, mem)
 
 def evm_opcode(evmcode):
     """
