@@ -1578,7 +1578,7 @@ class Verifier():
             raise Exception('UNKNOWN INSTRUCTION: ' + instr_parts[0])
 
         vp.print_state(stack, mem, global_state)
-
+        # print 'yes returned, gas = %s ' % analysis['gas']
         return analysis, global_state, stack, memory, mem   #  , stack, memory, mem)
 
 def evm_opcode(evmcode):
