@@ -393,7 +393,7 @@ def update_analysis(analysis, opcode, stack, mem, global_state, path_conditions_
     :param mem:
     :param global_state:
     :param path_conditions_and_vars:
-    :param solver:
+    :param solver: this solver might be not the class internal solver
     :return: analysis,
     """
     gas_increment, gas_memory = calculate_gas(opcode, stack, mem, global_state, analysis, solver)

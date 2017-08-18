@@ -378,7 +378,7 @@ class Verifier():
                     # the else branch
                     self.log.debug("INFEASIBLE PATH DETECTED")
                 else:
-                    print ' branch 371 depth %s' % depth
+                    print ' total 371 depth %s' % depth
                     right_branch = self.vertices[block].get_falls_to()
                     stack1 = list(stack)
                     mem1 = dict(mem)
