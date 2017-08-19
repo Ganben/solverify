@@ -21,6 +21,28 @@ from generator import Generator
 UNSIGNED_BOUND_NUMBER = 2**256 - 1
 CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
 
+# return a class logger
+def init_logger():
+    logger = logging.getLogger('general_logger')
+    # do other logger setup like
+    # setup logger handlers,
+    # create console handler and set level to debug
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+
+    # create formatter
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    # add formatter to ch
+    ch.setFormatter(formatter)
+
+    # add ch to logger
+    logger.addHandler(ch)
+    # set formatters,
+    # set logging levels, etc
+    logger.setLevel(logging.DEBUG)
+    return logger
+
 class Verifier():
     """
     constructor: id;
@@ -32,7 +54,7 @@ class Verifier():
     """
     # UNSIGNED_BOUND_NUMBER = 2 ** 256 - 1
     # CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
-
+    _logger = init_logger()
     def __init__(self):
         """prepare all vars"""
         # load source files
@@ -74,7 +96,7 @@ class Verifier():
         self.all_gs =[]
         self.results = {}
         self.total_no_of_paths = 0
-        self.log = logging.getLogger(__name__)
+        self.log = self._logger #logging.getLogger(__name__)
         # sym_exec_block(block, pre_block, visited, depth, stack, mem, memory, global_state, path_conditions_and_vars,
         #               analysis, path, models):
         # global solver
@@ -227,7 +249,7 @@ class Verifier():
             return stack
 
         self.log.debug("Reach block address %d \n", block)
-        print 'stack = %s , mem = %s, gas = %s' % (stack, mem, analysis['gas'])
+        #  'stack = %s , mem = %s, gas = %s' % (stack, mem, analysis['gas'])
         self.log.debug("STACK: " + str(stack))
 
         current_edge = self.Edge(pre_block, block)
@@ -239,13 +261,13 @@ class Verifier():
 
         if self.visited_edges[current_edge] > global_params.LOOP_LIMIT:
             self.log.debug("Overcome a number of loop limit. Terminating this path ...")
-            print ' branch 241 '
+            #  ' branch 241 '
             return stack
 
         current_gas_used = analysis["gas"]
         if current_gas_used > global_params.GAS_LIMIT:
             self.log.debug("Run out of gas. Terminating this path ... ")
-            print ' branch 247 '
+            #  ' branch 247 '
             return stack
 
         # recursively execution instruction, one at a time
@@ -257,7 +279,7 @@ class Verifier():
 
         for instr in block_ins:
             # must update many var from local scope due to shit old coding
-            print 'exec instr %s ' % instr
+            self.log.debug('exec instr %s ' % instr)
             analysis, global_state, stack, memory, mem = self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
                          models)
             #
@@ -294,7 +316,7 @@ class Verifier():
                 # compare_storage_and_memory_unit_test(global_state, mem, analysis)
 
         elif self.jump_type[block] == "unconditional":  # executing "JUMP"
-            print ' branch 295 '
+            self.log.debug(' branch 295 ')
             successor = self.vertices[block].get_jump_target()
             stack1 = list(stack)
             mem1 = dict(mem)
@@ -310,7 +332,7 @@ class Verifier():
                 stack = res
 
         elif self.jump_type[block] == "falls_to":  # just follow to the next basic block
-            print ' branch 305 '
+            self.log.debug(' branch 305 ')
             successor = self.vertices[block].get_falls_to()
             stack1 = list(stack)
             mem1 = dict(mem)
@@ -339,7 +361,7 @@ class Verifier():
                 if self.solver.check() == unsat:
                     self.log.debug("INFEASIBLE PATH DETECTED")
                 else:
-                    print ' branch 335 %s' % depth
+                    self.log.debug(' branch 335 %s' % depth)
                     left_branch = self.vertices[block].get_jump_target()
                     stack1 = list(stack)
                     mem1 = dict(mem)
@@ -378,7 +400,8 @@ class Verifier():
                     # the else branch
                     self.log.debug("INFEASIBLE PATH DETECTED")
                 else:
-                    print ' total 371 depth %s' % depth
+                    # ' total 371 depth %s' % depth
+                    self.log.debug(' total depth %s ' % depth)
                     right_branch = self.vertices[block].get_falls_to()
                     stack1 = list(stack)
                     mem1 = dict(mem)
@@ -389,7 +412,7 @@ class Verifier():
                     path_conditions_and_vars1 = my_copy_dict(path_conditions_and_vars)
                     path_conditions_and_vars1["path_condition"].append(negated_branch_expression)
                     analysis1 = my_copy_dict(analysis)
-                    # print ' error sym block global %s ' % global_state
+                    #  ' error sym block global %s ' % global_state
                     res = self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
                     if len(res)>len(stack):
@@ -447,7 +470,8 @@ class Verifier():
                     for i in range(0, 5):
                         if not block_instrs[i].startswith(instrs[i]):
                             is_init_callvalue = False
-                            print '450 break'
+                            #  '450 break'
+                            self.log.debug('break loop for instr 473')
                             break
                 if from_block != 0 and not is_init_callvalue:
                     assertion = Assertion(start)
@@ -462,7 +486,7 @@ class Verifier():
         # this should be done before symbolically executing the instruction,
         # since SE will modify the stack and mem
         analysis = vp.update_analysis(analysis, instr_parts[0], stack, mem, global_state, path_conditions_and_vars, self.solver)
-        # print ' ins updated %s ' % analysis
+        #  ' ins updated %s ' % analysis
         # analysis.update(new_analysis)
 
 
@@ -1578,7 +1602,7 @@ class Verifier():
             raise Exception('UNKNOWN INSTRUCTION: ' + instr_parts[0])
 
         vp.print_state(stack, mem, global_state)
-        # print 'yes returned, gas = %s ' % analysis['gas']
+        #  'yes returned, gas = %s ' % analysis['gas']
         return analysis, global_state, stack, memory, mem   #  , stack, memory, mem)
 
 def evm_opcode(evmcode):
@@ -1594,7 +1618,7 @@ def evm_opcode(evmcode):
             ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
         disasm_out = disasm_p.communicate()[0]
     except Exception as e:
-        # print(e)
+        # (e)
         raise
     with open('temp.disasm', 'w') as tempfile:
         tempfile.write(disasm_out)

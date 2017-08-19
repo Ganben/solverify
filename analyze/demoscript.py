@@ -2,6 +2,9 @@
 # ganben for debug this class
 
 from verifier import Verifier
+import sys
+import logging
+
 
 try:
     v = Verifier()
