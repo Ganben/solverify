@@ -10,6 +10,7 @@ from z3 import *
 from z3.z3util import get_vars
 import logging
 from opcode import *
+from opcode import get_ins_cost
 # from global_params import *
 import global_params
 
@@ -18,6 +19,20 @@ from generator import Generator
 
 # default logger
 log = logging.getLogger(__name__)
+ch = logging.FileHandler('vplog.log')
+ch.setLevel(logging.DEBUG)
+
+# create formatter
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# add formatter to ch
+ch.setFormatter(formatter)
+
+# add ch to logger
+log.addHandler(ch)
+# set formatters,
+# set logging levels, etc
+log.setLevel(logging.DEBUG)
 
 def init_global_state(state=None):
     """this block read the state.json setting and generate state description
@@ -103,9 +118,10 @@ def generate_defaults(g_state, in_state):
     g_state['receiver_address'] = in_state.get('receiver_address', BitVec("Ia", 256))
     path_conditions_and_vars["Ia"] = g_state['receiver_address']
 
-    g_state['value'] = in_state.get('deposited_value', BitVec("Iv", 256))
+    g_state['value'] = BitVec("Iv", 256)# in_state.get('deposited_value', BitVec("Iv", 256))
     path_conditions_and_vars["Iv"] = g_state['value']
     deposited_value = g_state['value']
+    log.debug('init global_state-value %s' % g_state["value"])
 
     # calculate with init_Is and init_Ia
 
@@ -227,6 +243,7 @@ def calculate_gas(opcode, stack, mem, global_state, analysis, solver):
     :returns: gas_increment, new_gas_memory
     """
     gas_increment = get_ins_cost(opcode) # base cost
+    log.debug('get ins cost = %s' % gas_increment)
     gas_memory = analysis["gas_mem"]
     # In some opcodes, gas cost is not only depend on opcode itself but also current state of evm
     # For symbolic variables, we only add base cost part for simplicity

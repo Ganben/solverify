@@ -12,6 +12,7 @@ import midprocess as mp
 import preprocess as prp
 import detect as dt
 import global_params
+from opcode import *
 from utils import *
 from collections import namedtuple
 from ethereum_data import *
@@ -23,11 +24,11 @@ CONSTANT_ONES_159 = BitVecVal((1 << 160) - 1, 256)
 
 # return a class logger
 def init_logger():
-    logger = logging.getLogger('general_logger')
+    logger = logging.getLogger('V')
     # do other logger setup like
     # setup logger handlers,
     # create console handler and set level to debug
-    ch = logging.StreamHandler()
+    ch = logging.FileHandler('clsV.log')
     ch.setLevel(logging.DEBUG)
 
     # create formatter
@@ -282,6 +283,7 @@ class Verifier():
             self.log.debug('exec instr %s ' % instr)
             analysis, global_state, stack, memory, mem = self.sym_exec_ins(block, instr, stack, mem, memory, global_state, path_conditions_and_vars, analysis, path,
                          models)
+            self.log.debug('updated instr stack %s' % stack)
             #
             # Mark that this basic block in the visited blocks
         visited.append(block)
@@ -328,9 +330,9 @@ class Verifier():
             analysis1 = my_copy_dict(analysis)
             res = self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
                            path_conditions_and_vars1, analysis1, path + [block], models)
-            if len(res) > len(stack):
-                stack = res
-
+            #if len(res) >= len(stack):
+            stack = res
+            self.log.debug('updated stack %s' % stack)
         elif self.jump_type[block] == "falls_to":  # just follow to the next basic block
             self.log.debug(' branch 305 ')
             successor = self.vertices[block].get_falls_to()
@@ -344,12 +346,13 @@ class Verifier():
             analysis1 = my_copy_dict(analysis)
             res = self.sym_exec_block(successor, block, visited1, depth, stack1, mem1, memory1, global_state1,
                            path_conditions_and_vars1, analysis1, path + [block], models)
-            if len(res) > len(stack):
-                stack = res
+            #if len(res) >= len(stack):
+            stack = res
+            self.log.debug('updated stack %s' % stack)
         elif self.jump_type[block] == "conditional":  # executing "JUMPI"
 
             # A choice point, we proceed with depth first search
-
+            self.log.debug('block = %s' %  block)
             branch_expression = self.vertices[block].get_branch_expression()
 
             self.log.debug("Branch expression: " + str(branch_expression))
@@ -374,9 +377,9 @@ class Verifier():
                     analysis1 = my_copy_dict(analysis)
                     res = self.sym_exec_block(left_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
-                    if len(res)>len(stack):
-                        stack = res
-
+                    #if len(res)>=len(stack):
+                    stack = res
+                    self.log.debug('updated stack %s' % stack)
             except Exception as e:
                 self.log.error('recursive error: %s ' % e)
                 # log_file.write(str(e))
@@ -415,8 +418,10 @@ class Verifier():
                     #  ' error sym block global %s ' % global_state
                     res = self.sym_exec_block(right_branch, block, visited1, depth, stack1, mem1, memory1, global_state1,
                                    path_conditions_and_vars1, analysis1, path + [block], models + [self.solver.model()])
-                    if len(res)>len(stack):
-                        stack = res
+                    
+                    #if len(res)>=len(stack):
+                    stack = res
+                    self.log.debug('updated stack %s' % stack)
             except Exception as e:
                 # log_file.write(str(e))
                 traceback.print_exc()
@@ -430,6 +435,7 @@ class Verifier():
             updated_count_number = self.visited_edges[current_edge] - 1
             self.visited_edges.update({current_edge: updated_count_number})
             raise Exception('Unknown Jump-Type')
+        self.log.debug('stack trace 434 %s / pop' % stack )
         return stack
 
 
@@ -1019,6 +1025,7 @@ class Verifier():
             stack.insert(0, global_state["origin"])
         elif instr_parts[0] == "CALLVALUE":  # get value of this transaction
             global_state["pc"] = global_state["pc"] + 1
+            self.log.debug('callvalue update %s' % global_state["value"])
             stack.insert(0, global_state["value"])
         elif instr_parts[0] == "CALLDATALOAD":  # from input data from environment
             if len(stack) > 0:
@@ -1384,12 +1391,15 @@ class Verifier():
                         raise TypeError("Target address must be an integer")
                 self.vertices[start].set_jump_target(target_address)
                 flag = stack.pop(0)
+                self.log.debug('flag o stack pop %s' % flag)
                 branch_expression = (BitVecVal(0, 1) == BitVecVal(1, 1))
                 if vp.isReal(flag):
+                    self.log.error('flag wrong branch!')
                     if flag != 0:
                         branch_expression = True
                 else:
                     branch_expression = (flag != 0)
+                self.log.debug('occured: set branch on %s of %s' % (start, branch_expression))
                 self.vertices[start].set_branch_expression(branch_expression)
                 if target_address not in self.edges[start]:
                     self.edges[start].append(target_address)
@@ -1600,8 +1610,8 @@ class Verifier():
                 # exit(UNKOWN_INSTRUCTION)
                 pass
             raise Exception('UNKNOWN INSTRUCTION: ' + instr_parts[0])
-
-        vp.print_state(stack, mem, global_state)
+        self.log.debug('stack trace 1607  %s pop' % stack )
+        # vp.print_state(stack, mem, global_state)
         #  'yes returned, gas = %s ' % analysis['gas']
         return analysis, global_state, stack, memory, mem   #  , stack, memory, mem)
 
