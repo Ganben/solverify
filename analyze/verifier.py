@@ -124,6 +124,7 @@ class Verifier():
             if not self.evm:
                 _, _, eres = prp.sol_evm(self.sol)
                 self.evm = eres[0]  #no need list, if so need depre sol input; :TODO: warn multi
+            
             try:
                 self.disasm_raw = evm_opcode(self.evm)
                 self.disasm, self.tokens = mp.construction_var(self.disasm_raw)  #TODO: check call type

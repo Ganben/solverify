@@ -77,15 +77,15 @@ def construction_file():
             i = i + 1
         file_contents[0] = firstLine
         file_contents[-1] += '\n'
-    with open(RPLACED, 'w') as disasm_file:
-        disasm_file.write("\n".join(file_contents))
+    # with open(RPLACED, 'w') as disasm_file:
+    #     disasm_file.write("\n".join(file_contents))
 
-    with open(RPLACED, 'r') as disasm_file:
-        disasm_file.readline()  # Remove first line
-        tokens = tokenize.generate_tokens(disasm_file.readline)
-        with open(TOKENFILE, 'w') as of:
-            of.write(' '.join(str(tokens)))
-
+    # with open(RPLACED, 'r') as disasm_file:
+    #     disasm_file.readline()  # Remove first line
+    #     tokens = tokenize.generate_tokens(disasm_file.readline)
+    #     with open(TOKENFILE, 'w') as of:
+    #         of.write(' '.join(str(tokens)))
+    
     return [SOLFILE, EVMFILE, DISASMFILE, RPLACED, TOKENFILE]
 
 # same process but only handle var in mem
@@ -124,8 +124,8 @@ def construction_var(disasm_raw):
         log.error(' block 121 error: %s ' % e)
         raise
 
-    with open('temp2.disasm', 'w') as of:
-        of.write('\n'.join(disasm_list))
+    #with open('temp2.disasm', 'w') as of:
+    #    of.write('\n'.join(disasm_list))
 
     # with open('temp2.disasm', 'r') as of:
         # of.readline()
@@ -245,13 +245,13 @@ def cons_token2vertices(tokens):
         if key not in jump_type:
             jump_type[key] = "falls_to"
 
-    with open('temp_vertercies', 'w') as of:
-        of.write(str(end_ins_dict))
-        of.write(str(instructions))
-        of.write(str(jump_type))
+    # with open('temp_vertercies', 'w') as of:
+    #    of.write(str(end_ins_dict))
+    #    of.write(str(instructions))
+    #    of.write(str(jump_type))
 
-    with open('temp_tokenlist', 'w') as of:
-        of.write(''.join(linewriter))
+    # with open('temp_tokenlist', 'w') as of:
+        # of.write(''.join(linewriter))
 
     return end_ins_dict, instructions, jump_type
 

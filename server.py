@@ -5,6 +5,7 @@
 
 from flask import Flask, redirect, url_for
 from flask import request
+from flask import jsonify
 import shlex, re, os
 import subprocess
 from analyze.verifier import Verifier
@@ -27,47 +28,15 @@ def upload_sol():
         </form>
     '''
     solfile = request.form['code']
-    with open('temp.sol', 'w') as tempfile:
-        tempfile.write(solfile)
-    solc_cmd = "solc --optimize --bin-runtime %s"
-    #result = {'reentry':False, 'concurrecy':False, 'timestamp':False, 'callstack':False}
-    res = subprocess.Popen(shlex.split(
-      solc_cmd % 'temp.sol'
-    ), stdout=subprocess.PIPE)
-    resout = res.communicate()
-    binary_regex = re.compile(b"\n======= (.*?) =======\nBinary of the runtime part: \n(.*?)\n")
-    contracts = re.findall(binary_regex, resout[0])
-    bit = []
-    for (cname, bin_str) in contracts:
-        bit.append(str(bin_str))
-    os.remove('temp.sol')
-    return ' '.join(bit)
+    v = Verifier()
+    v.load_sol(solfile)
+#    v.compile()
+    v.check_all()
+    return jsonify(result=v.results)
+
+
 
 @app.route('/byte', methods=['GET', 'POST'])
-def upload_byte():
-    #upload bytecode and do analyzes, generate op code from bytecode
-    if not request.method == 'POST':
-        return '''
-        <form method="post">
-            <p><textarea cols=40 rows=10 name=code style="background-color:BFCEDC"></textarea>
-            <p><input type=submit value=EVM_OP>
-        </form>
-    '''
-    bytefile = request.form['code']
-    with open('temp.evm', 'w') as tempfile:
-        tempfile.write(bytefile)
-    try:
-        disasm_p = subprocess.Popen(
-            ["evm", "disasm", 'temp.evm'], stdout=subprocess.PIPE)
-        disasm_out = disasm_p.communicate()[0]
-    except:
-        return "evm error"
-    result = []
-    result.append(str(disasm_out))
-    os.remove('temp.evm')
-    return '\n'.join(result)
-
-@app.route('/analyze', methods=['GET', 'POST'])
 def analyze():
     #upload bytecode and do analyzes, generate op code from bytecode
     if not request.method == 'POST':
@@ -80,9 +49,9 @@ def analyze():
     evmcode = request.form['code']
     v = Verifier()
     v.load_byte(evmcode)
-    v.compile()
+#    v.compile()
     v.check_all()
-    return v.results
+    return jsonify(result=v.results)
 
 
 @app.route('/address/<c_addr>')
