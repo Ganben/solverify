@@ -24,11 +24,15 @@ def upload_sol():
             <p><input type=submit value=COMPILE>
         </form>
     '''
-    solfile = request.form['code']
-    v = Verifier()
-    v.load_sol(solfile)
+    try:
+        solfile = request.form['code']
+        v = Verifier()
+        v.load_sol(solfile)
 #    v.compile()
-    v.check_all()
+        v.check_all()
+    except Exception as e:
+        return jsonify(error='Error %s' % e)
+
     return jsonify(result=v.results)
 
 @app.route('/byte', methods=['GET', 'POST'])
@@ -41,11 +45,15 @@ def analyze():
             <p><input type=submit value=Analyze>
         </form>
     '''
-    evmcode = request.form['code']
-    v = Verifier()
-    v.load_byte(evmcode)
+    try:
+        evmcode = request.form['code']
+        v = Verifier()
+        v.load_byte(evmcode)
 #    v.compile()
-    v.check_all()
+        v.check_all()
+    except Exception as e:
+        return jsonify(error='Error %s' % e)
+
     return jsonify(result=v.results)
 
 @app.route('/')
