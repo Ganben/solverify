@@ -60,3 +60,6 @@ def analyze():
 def hello():
     #TODO: add a index with form to paste code/contract address
     return jsonify(result='Hello world', error = True)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
