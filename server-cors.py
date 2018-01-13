@@ -7,14 +7,13 @@ from flask_cors import cross_origin
 from flask import jsonify
 from flask import request
 from analyze.verifier import Verifier
-
+from testdata import *
 
 app = Flask(__name__)
 CORS(app)
 
 
 @app.route("/sol", methods=['GET', 'POST'])
-
 def upload_sol():
     #upload sol and return results, use subprocess Popen constructor and PIP stdout
     if not request.method == 'POST':
@@ -55,6 +54,17 @@ def analyze():
         return jsonify(error='Error %s' % e)
 
     return jsonify(result=v.results)
+
+@app.route('/submit', methods = ['POST'])
+def submit():
+    # accept submitted config n code file
+    return jsonify(status='OK')
+
+@app.route('/result', methods = ['GET'])
+def result():
+    # return generated results
+    res = generate_results(10, True)
+    return jsonify(res=res, error=None)
 
 @app.route('/')
 def hello():
