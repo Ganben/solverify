@@ -2,7 +2,7 @@
 import testdata
 
 # SAMPLE_RESULT = generate_results(10, True)
-
+from taskstatus import *
 
 def generate_results(num, error_flag):
     res = {}
@@ -18,12 +18,13 @@ def generate_item(num):
     for i in range(0, num):
         it = {}
         it['id'] = i
-        it['label'] = 'error'
-        it['category'] = 'trans'
-        it['icon'] = '/icon/error1.png'
+        it['label'] = Label.danger.value
+        it['category'] = Category.etherflow.value
+        # it['type'] = Category.recursive
         it['description'] = 'error description 1'
         it['name'] = 'Huge error'
-        it['lines'] = 15+i*2
+        it['input'] = 'abase64stringdataasinputdata'
+        it['lines'] = [i*4,i*4+1,i*4+2]
         res.append(it)
     return res
 
