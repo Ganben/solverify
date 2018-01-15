@@ -51,7 +51,8 @@ def new_task(ssid):
 
     return o
 
-def parse_submit(ssid, data_conf, data_code):
+def parse_submit(ssid, formdata):
     # parse the submitted code and call external/internal module
     # TODO
+    print('form = %s' % formdata)
     return 0

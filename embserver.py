@@ -23,28 +23,58 @@ Session(app)
 @app.route('/submit', methods = ['POST', 'GET'])
 def submit():
     # accept submitted config n code file
-    if session.get('task', False):
-        # TODO process submitted data for existed key
-        return 'OK: %s' % session['task']
-    else:
-        task_id = uuid.uuid4()
-        task = new_task(task_id)
+    incoming = {}
 
-        if not task:
-            return 'Queue Full Error'
-        else:
-            session['task'] = task_id
+    # if session.get('task', False):
+    #     # TODO process submitted data for existed key
+    #     if request.method == 'POST':
+    #         # check
+    #         try:
+    #             incoming['code'] = request.form['code']
+    #             incoming['type'] = request.form['type']
+    #             incoming['reentrancy'] = request.form['reentrancy']
+    #             incoming['mislocking'] = request.form['mislocking']
+    #             incoming['multisig'] = request.form['multisig']
+    #         except:
+    #             return abort(401)
+    #     res = parse_submit(session['task'], incoming)
+    #     if new_task(session['task']):
+    #         return jsonify(task=session['task'])
+    #     task_id = uuid.uuid4()
+    #     return jsonify(task=task_id)
+    # else:
+    task_id = uuid.uuid4()
+    task = new_task(task_id)
+
+    if not task:
+        return 'Queue Full Error'
+    else:
+        session['task'] = task_id
+        if request.method == 'POST':
+            # check
+            try:
+                incoming['code'] = request.form['code']
+                incoming['type'] = request.form['type']
+                incoming['reentrancy'] = request.form['reentrancy']
+                incoming['mislocking'] = request.form['mislocking']
+                incoming['multisig'] = request.form['multisig']
+            except:
+                return abort(404)
+
+        res = parse_submit(task_id, incoming)
             # TODO process submitted data (task is returned obj)
-            return 'OK'
+        return jsonify(task=task_id)
 
 @app.route('/result', methods = ['GET'])
 def result():
     # return generated results
     # TODO find the result by key = value
     key = session.get('task', False)
+
     print('%s' % session)
     res = generate_results(3, True)
-    if not key:
+    if not request.args.get('task', False):
+        print('%s' % request.args)
         # TODO return error 401 or alike
         return abort(403)
     else:
