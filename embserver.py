@@ -1,6 +1,8 @@
 #encoding=utf-8
 # ganben
 
+from flask import redirect
+from flask import send_from_directory
 from flask import Flask
 from flask import session
 from flask_session import Session
@@ -13,7 +15,7 @@ from testdata import *
 from taskstatus import *
 import uuid
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static/')
 SESSION_TYPE = 'redis'
 app.config.from_object(__name__)
 CORS(app)
@@ -82,10 +84,16 @@ def result():
 
         return jsonify(res)
 
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('./static', path)
+
 @app.route('/')
 def hello():
     #TODO: add a index with form to paste code/contract address
-    return jsonify(result='Hello world', error = True)
+    # return jsonify(result='Hello world', error = True)
+    # return app.send_static_file('index.html')
+    return redirect('/static/index.html')
 
 if __name__ == '__main__':
     # TODO: create another async thread to monitoring incomming job
