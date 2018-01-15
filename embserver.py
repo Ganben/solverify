@@ -81,8 +81,13 @@ def result():
         return abort(403)
     else:
         # TODO query the result session
+        finded = query_task(request.args.get('task'))
+        if not finded:
+            return jsonify(res)
+            # return abort(404)
+        else:
+            return finded
 
-        return jsonify(res)
 
 @app.route('/static/<path:path>')
 def send_static(path):
