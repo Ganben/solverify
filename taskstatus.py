@@ -24,6 +24,7 @@ def init_logger():
 log = init_logger()
 
 global RESULT
+RESULT = {}
 
 status_source = redis.StrictRedis(host='localhost', port=6379, db=0)
 statusList = []
