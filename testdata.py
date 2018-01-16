@@ -10,7 +10,7 @@ def generate_results(num, error_flag):
     res['charts'] = generate_charts()
     res['stat'] = generate_stat()
     res['error'] = generate_error(error_flag)
-    print('res=%s' % res)
+    # print('res=%s' % res)
     return res
 
 def generate_item(num):

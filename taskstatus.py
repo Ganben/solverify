@@ -167,6 +167,8 @@ def parse_submit(ssid, formdata):
 def parse_result(fuzzres):
     # parse the fuzz res to result
     text, lines = fuzzres
+    textslist = str(text).split('\n')
+    texts = '<br/>'.join(textslist)
     e = {
         'id': 0,
         'label': 1,
@@ -180,7 +182,7 @@ def parse_result(fuzzres):
     r = {
         'results': [e,],
         'charts': 'charts',
-        'stat': text,
+        'stat': texts,
         'error': 0
     }
     return r
