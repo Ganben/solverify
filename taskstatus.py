@@ -51,7 +51,9 @@ class Label(enum.Enum):
 class Task(object):
     # log = init_logger()
     def __init__(self, ssid):
+
         self.ssid = str(ssid)
+        log.debug('create ssid %s of %s' % (self.ssid, type(self.ssid)))
         self.status = State.accept
 
     # save code to file
@@ -77,10 +79,11 @@ class Task(object):
             # parse the result
                 result = {'result': parse_result(res)}
                 global RESULT 
-                RESULT[self.ssid] = result
+                
                 log.debug('push to RESULT dict %s' % RESULT)
-                status_source.set(self.ssid, json.dumps(result))
-                log.debug('%s'% json.dumps(result))
+                if not status_source.set(self.ssid, json.dumps(result)):
+                    RESULT[self.ssid] = result
+                log.debug('redis: %s'% json.dumps(result))
                 
             except:
                 return False
@@ -137,6 +140,7 @@ def query_task(task_id):
         # except:
         #     return False
             if o.get('result'):
+                log.debug('get result from redis %s' % o )
                 return o.get('result')
             else:
                 return False
@@ -153,10 +157,10 @@ def query_task(task_id):
                     return o.get('result')
             except:
 
-                return RESULT[ssid]
+                return False
             
         else:
-            return RESULT[ssid]
+            return False
         # if t:
         #     try:
         #         obj = json.loads(t)
