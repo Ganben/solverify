@@ -77,13 +77,14 @@ class Task(object):
             # parse the result
                 result = {'result': parse_result(res)}
                 global RESULT 
-                RESULT = result
+                RESULT[self.ssid] = result
+                log.debug('push to RESULT dict %s' % RESULT)
                 status_source.set(self.ssid, json.dumps(result))
                 log.debug('%s'% json.dumps(result))
                 
             except:
                 return False
-            self.finish()
+            
             return True
         else:
             return False
@@ -126,22 +127,36 @@ def query_task(task_id):
     log.debug('get task id: %s' % task_id)
     t = status_source.get(task_id)
     log.debug('fetch from cache %s' % t)
-
     if t:
-        try:
-            obj = json.loads(t)
-        except:
-            return False
-        if obj.get('result'):
-            return obj.get('result')
-        else:
-            return False
+        s = t.decode("utf-8")
+        o = json.loads(s)
+    
+        if o:
+        # try:
+        #     obj = json.loads(t)
+        # except:
+        #     return False
+            if o.get('result'):
+                return o.get('result')
+            else:
+                return False
     else:
-        ssid = str(status_source.get('latest'))
+        b = status_source.get('latest')
+        ssid = b.decode('utf-8')
         log.debug('get latest: %s' % ssid)
         t = status_source.get(ssid)
         log.debug('redis result: %s' % t)
-        return RESULT
+        if t:
+            try:
+                o = json.loads(t)
+                if o and o.get('result'):
+                    return o.get('result')
+            except:
+
+                return RESULT[ssid]
+            
+        else:
+            return RESULT[ssid]
         # if t:
         #     try:
         #         obj = json.loads(t)
