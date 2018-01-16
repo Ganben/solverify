@@ -13,6 +13,7 @@ from flask import request
 from flask import abort
 from testdata import *
 from taskstatus import *
+
 import uuid
 
 app = Flask(__name__, static_url_path='/static/')
@@ -63,17 +64,23 @@ def submit():
             except:
                 return abort(404)
 
-        res = parse_submit(task_id, incoming)
+        try:
+            res = parse_submit(task_id, incoming)
+        except:
+            return 'OK2'
+        if res:
+            return 'OK'
+        else:
+            
             # TODO process submitted data (task is returned obj)
-        return jsonify(task=task_id)
+            return jsonify(task=task_id)
 
 @app.route('/result', methods = ['GET'])
 def result():
     # return generated results
     # TODO find the result by key = value
-    key = session.get('task', False)
-
-    print('%s' % session)
+    # key = session.get('task', False)
+    # print('%s' % session)
     res = generate_results(3, True)
     if not request.args.get('task', False):
         print('%s' % request.args)
@@ -82,11 +89,12 @@ def result():
     else:
         # TODO query the result session
         finded = query_task(request.args.get('task'))
+        print('%s' % finded)
         if not finded:
             return jsonify(res)
             # return abort(404)
         else:
-            return finded
+            return jsonify(finded)
 
 
 @app.route('/static/<path:path>')
