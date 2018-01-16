@@ -67,9 +67,9 @@ def submit():
         try:
             res = parse_submit(task_id, incoming)
         except:
-            return 'OK2'
+            return jsonify(task=task_id)
         if res:
-            return 'OK'
+            return jsonify(task=task_id)
         else:
             
             # TODO process submitted data (task is returned obj)
