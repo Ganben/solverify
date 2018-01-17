@@ -55,7 +55,7 @@ class WorkerThread (threading.Thread):
                     log.debug('%s' % str(res[0]))
                     log.debug('%s' % str(res[1]))
                     # parse the result
-                    result = {'result': parse_result(res, jj.cate)}
+                    result = {'result': parse_result(res, jj.cate, jj.file_num)}
                     # global RESULT                
                     # log.debug('push to RESULT dict %s' % RESULT)
                     if self.status_source.set(jj.ssid, json.dumps(result)):

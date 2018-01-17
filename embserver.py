@@ -74,8 +74,8 @@ def submit():
         try:
             res = parse_submit(task_id, incoming)
         
-        except:
-            return jsonify(task=task_id, res='parse fail')
+        except Exception as e:
+            return jsonify(task=task_id, res='parse fail %s' % e)
 
         statusList.append(res)
         return jsonify(task=task_id, res='job append')

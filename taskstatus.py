@@ -189,7 +189,7 @@ def parse_submit(ssid, formdata):
     return t
 
 
-def parse_result(fuzzres, cate):
+def parse_result(fuzzres, cate, sel):
     # parse the fuzz res to result
     # return a result dict
     text, lines = fuzzres
@@ -199,18 +199,11 @@ def parse_result(fuzzres, cate):
     textslist = str(text).split('\n')
     texts = '<br/>'.join(textslist)
     log.debug('generated br text:%s' % texts)
-    e = {
-        'id': 0,
-        'label': 1,
-        'category': 1,
-        'description': 'temporary not, should be filled',
-        'name': 'to be filled',
-        'input': 'base64xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-        'lines': lines
-    }
-    
+
+    elist = gen_cateresult(cate, lines, sel)
     r = {
-        'results': [e,],
+        'results': elist,
+        'lines': lines,
         'charts': 'charts',
         'stat': texts,
         'error': 0
@@ -224,21 +217,53 @@ def generate_error_result(cates):
         'id': 0,
         'label': 1,
         'category': 1,
+        'description': 'The analyzing encounters an error',
+        'name': 'Fail',
+        'input': '',
+        'lines': []
+    }
+    # elist = []
+    # for i in cates:
+    #     e['id'] += 1
+    #     e['category'] += 1
+    #     elist.append(e)
+
+    r = {
+        'results': [e,],
+        'charts': 'charts',
+        'stat': 'Error',
+        'error': 1
+    }
+    return r
+
+def gen_cateresult(catelist, lines, sel):
+    # generate required formatted result item
+    e = {
+        'id': 0,
+        'label': 0,
+        'category': 0,
         'description': 'temporary not, should be filled',
         'name': 'to be filled',
         'input': 'base64xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-        'lines': []
+        'lines': lines
     }
     elist = []
-    for i in cates:
-        e['id'] += 1
-        e['category'] += 1
-        elist.append(e)
+    if sel == 0:
+        e['description'] = 'This is a reentrancy bug'
+        e['name'] = 'Reentrancy'
+        e['input'] = ''
+        e['lines'] = lines
+        
+    elif sel == 1:
+        e['name'] = 'Mislocking'
+        e['description'] = 'This is a mislocking bug'
+        e['lines'] = lines
+        e['input'] = ''
+    elif sel == 2:
+        e['name'] = 'Multi-sig'
+        e['description'] = 'This is a Multi-sig bug'
+        e['lines'] = lines
+        e['input'] = ''
 
-    r = {
-        'results': elist,
-        'charts': 'charts',
-        'stat': 'Error',
-        'error': 0
-    }
-    return r
+    elist.append(e)
+    return elist
