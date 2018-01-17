@@ -5,10 +5,12 @@ import enum
 from cachetools import LRUCache
 import datetime
 import os.path
-from fuzz_test import *
+# from fuzz_test import *
 import utils
 import logging
 import json
+import time
+# from embserver import statusList, status_source
 
 def init_logger():
     logger = logging.getLogger('status')
@@ -26,8 +28,8 @@ log = init_logger()
 global RESULT
 RESULT = {}
 
-status_source = redis.StrictRedis(host='localhost', port=6379, db=0)
-statusList = []
+# status_source = redis.StrictRedis(host='localhost', port=6379, db=0)
+# statusList = []
 FILE_PATH = '/tmp/sol/' # use a temp dir
 # TODO enum task state, category, label,
 class State(enum.Enum):
@@ -50,11 +52,13 @@ class Label(enum.Enum):
 
 class Task(object):
     # log = init_logger()
-    def __init__(self, ssid):
+    def __init__(self, ssid, file_num, cate):
 
         self.ssid = str(ssid)
-        log.debug('create ssid %s of %s' % (self.ssid, type(self.ssid)))
+        log.debug('create ssid %s with %s' % (self.ssid, cate))
         self.status = State.accept
+        self.file_num = int(file_num)
+        self.cate = cate
 
     # save code to file
     def save_file(self, code):
@@ -69,24 +73,24 @@ class Task(object):
         if self.status == State.accept:
             self.status = State.processing
             # call or insert it to queue
-            statusList.append(self)
+            # statusList.append(self)
             # call the process (should async TODO)
-            try:
-                res = fuzz_test(self.filepath, file_num, None, True)
-                log.debug('%s' % len(res))
-                log.debug('%s' % str(res[0]))
-                log.debug('%s' % str(res[1]))
-            # parse the result
-                result = {'result': parse_result(res)}
-                global RESULT 
+            # try:
+            #     res = fuzz_test(self.filepath, file_num, None, True)
+            #     log.debug('%s' % len(res))
+            #     log.debug('%s' % str(res[0]))
+            #     log.debug('%s' % str(res[1]))
+            # # parse the result
+            #     result = {'result': parse_result(res)}
+            #     global RESULT 
                 
-                log.debug('push to RESULT dict %s' % RESULT)
-                if not status_source.set(self.ssid, json.dumps(result)):
-                    RESULT[self.ssid] = result
-                log.debug('redis: %s'% json.dumps(result))
+            #     log.debug('push to RESULT dict %s' % RESULT)
+            #     if not status_source.set(self.ssid, json.dumps(result)):
+            #         RESULT[self.ssid] = result
+            #     log.debug('redis: %s'% json.dumps(result))
                 
-            except:
-                return False
+            # except:
+            #     return False
             
             return True
         else:
@@ -95,21 +99,20 @@ class Task(object):
     def finish(self):
         if self.status == State.processing:
             # get result from external format
-            obj = status_source.get(self.ssid)
-            if obj.get('result'):
-                self.status = State.completed
-                os.remove(self.filepath)
-                os.remove('%s.ast.json' % self.filepath)
-                statusList.remove(self)
-                return obj.get('result')
-            else:
-                return False       
+            # obj = status_source.get(self.ssid)
+            # if obj.get('result'):
+            #     self.status = State.completed
+            os.remove(self.filepath)
+            os.remove('%s.ast.json' % self.filepath)
+                # statusList.remove(self)
+            return True
+               
         
         else:
             return False
 
 
-def new_task(ssid):
+def new_task(ssid, statusList, status_source):
     # create a new task, save it's ssid, status, file
     # cache update
     if len(statusList) > 5:
@@ -126,7 +129,7 @@ def new_task(ssid):
 
     return True
 
-def query_task(task_id):
+def query_task(task_id, status_source):
     log.debug('get task id: %s' % task_id)
     t = status_source.get(task_id)
     log.debug('fetch from cache %s' % t)
@@ -143,7 +146,7 @@ def query_task(task_id):
                 log.debug('get result from redis %s' % o )
                 return o.get('result')
             else:
-                return False
+                return o
     else:
         b = status_source.get('latest')
         ssid = b.decode('utf-8')
@@ -174,24 +177,32 @@ def query_task(task_id):
         #     return False
 
 def parse_submit(ssid, formdata):
-    # parse the submitted code and call external/internal module
-    # TODO
+    # parse the submitted code and make task obj
+    # push to queue
     # print('form = %s' % formdata)
     log.debug('incoming data %s' % formdata)
-    t = Task(ssid)
+
+    t = Task(ssid, formdata['type'], [formdata['reentrancy'], formdata['mislocking'], formdata['multisig']])
     t.save_file(formdata['code'])
-    return t.pushto(int(formdata['type']))
+    t.pushto(int(formdata['type']))
+
+    return t
 
 
-def parse_result(fuzzres):
+def parse_result(fuzzres, cate):
     # parse the fuzz res to result
+    # return a result dict
     text, lines = fuzzres
+    log.debug('result parse: %s' % text)
+    if len(text)<1:
+        text = 'ERROR'
     textslist = str(text).split('\n')
     texts = '<br/>'.join(textslist)
+    log.debug('generated br text:%s' % texts)
     e = {
         'id': 0,
         'label': 1,
-        'category': 3,
+        'category': 1,
         'description': 'temporary not, should be filled',
         'name': 'to be filled',
         'input': 'base64xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -202,6 +213,32 @@ def parse_result(fuzzres):
         'results': [e,],
         'charts': 'charts',
         'stat': texts,
+        'error': 0
+    }
+    return r
+
+def generate_error_result(cates):
+    # format the error result for ssid
+    # return a result dict
+    e = {
+        'id': 0,
+        'label': 1,
+        'category': 1,
+        'description': 'temporary not, should be filled',
+        'name': 'to be filled',
+        'input': 'base64xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        'lines': []
+    }
+    elist = []
+    for i in cates:
+        e['id'] += 1
+        e['category'] += 1
+        elist.append(e)
+
+    r = {
+        'results': elist,
+        'charts': 'charts',
+        'stat': 'Error',
         'error': 0
     }
     return r

@@ -13,8 +13,10 @@ from flask import request
 from flask import abort
 from testdata import *
 from taskstatus import *
-
+from fuzz_test import *
+from taskmonitor import WorkerThread
 import uuid
+import redis
 
 app = Flask(__name__, static_url_path='/static/')
 SESSION_TYPE = 'redis'
@@ -22,12 +24,17 @@ app.config.from_object(__name__)
 CORS(app)
 Session(app)
 
+global statusList
+statusList = []
+status_source = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+# for fuzz test
+FILE_PATH = '/tmp/sol/'
 
 @app.route('/submit', methods = ['POST', 'GET'])
 def submit():
     # accept submitted config n code file
     incoming = {}
-
     # if session.get('task', False):
     #     # TODO process submitted data for existed key
     #     if request.method == 'POST':
@@ -47,7 +54,7 @@ def submit():
     #     return jsonify(task=task_id)
     # else:
     task_id = uuid.uuid4()
-    task = new_task(task_id)
+    task = new_task(task_id, statusList, status_source)
 
     if not task:
         return 'Queue Full Error'
@@ -66,14 +73,13 @@ def submit():
 
         try:
             res = parse_submit(task_id, incoming)
+        
         except:
-            return jsonify(task=task_id)
-        if res:
-            return jsonify(task=task_id)
-        else:
-            
-            # TODO process submitted data (task is returned obj)
-            return jsonify(task=task_id)
+            return jsonify(task=task_id, res='parse fail')
+
+        statusList.append(res)
+        return jsonify(task=task_id, res='job append')
+
 
 @app.route('/result', methods = ['GET'])
 def result():
@@ -88,11 +94,20 @@ def result():
         return abort(403)
     else:
         # TODO query the result session
-        finded = query_task(request.args.get('task'))
-        print('%s' % finded)
+        finded = query_task(request.args.get('task'), status_source)
+        # print('%s' % finded)
+        log.debug('querys=%s(%s)' % (finded, type(finded)))
         if not finded:
-            return jsonify(res)
-            # return abort(404)
+            time.sleep(1)
+            finded = query_task(request.args.get('task'), status_source)            
+            if not finded:
+                time.sleep(1)
+                finded = query_task(request.args.get('task'), status_source)
+
+                return abort(404)
+            else:
+                return jsonify(finded)
+
         else:
             return jsonify(finded)
 
@@ -111,5 +126,10 @@ def hello():
 if __name__ == '__main__':
     # TODO: create another async thread to monitoring incomming job
     print('list = %s' % len(statusList))
-
+    thr = WorkerThread(1, statusList)
+    try:
+        thr.start()
+    except KeyboardInterrupt:
+        thr.keep_interrupt = True
+        raise
     app.run(host='0.0.0.0', port=5005)

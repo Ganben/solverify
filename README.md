@@ -12,3 +12,6 @@ u should have all oyente environments:
 ## objectives
 
 a transparent process, a module based analyze platform, a better visual results
+
+start as a fuzz caller:
+PYTHONPATH=../FUZZDIR/ python3 embserver.py
