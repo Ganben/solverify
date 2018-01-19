@@ -200,7 +200,7 @@ def parse_result(fuzzres, cate, sel):
     texts = '<br/>'.join(textslist)
     log.debug('generated br text:%s' % texts)
 
-    elist = gen_cateresult(cate, lines, sel)
+    elist = gen_cateresult(cate, lines, sel, texts)
     r = {
         'results': elist,
         'lines': lines,
@@ -236,7 +236,7 @@ def generate_error_result(cates):
     }
     return r
 
-def gen_cateresult(catelist, lines, sel):
+def gen_cateresult(catelist, lines, sel, texts):
     # generate required formatted result item
     e = {
         'id': 0,
@@ -245,6 +245,7 @@ def gen_cateresult(catelist, lines, sel):
         'description': 'temporary not, should be filled',
         'name': 'to be filled',
         'input': 'base64xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        'stat': texts,
         'lines': lines
     }
     elist = []
